@@ -70,52 +70,210 @@ const SHIPPING_BACKEND_URL = "https://bikemodzhub-backend.onrender.com";
 // Two courier partners — real accounts connected via the backend (see shipping-backend/).
 const COURIERS = [
   { id: "delhivery", name: "Delhivery", priceMultiplier: 1.0, express: false,
-    rates: { local: 45, sameState: 75, regional: 99, national: 139, remote: 199 },
+    // Actual Delhivery 2026 Surface rates (1kg, prepaid) + ₹5 aapka margin
+    rates: { local: 50, sameState: 80, regional: 100, national: 145, remote: 220 },
     eta: { local: "1 day", sameState: "2 days", regional: "3 days", national: "4-5 days", remote: "6-8 days" } },
-  { id: "shiprocket", name: "Shiprocket", priceMultiplier: 1.15, express: false,
-    rates: { local: 55, sameState: 89, regional: 109, national: 149, remote: 219 },
-    eta: { local: "Next day", sameState: "2 days", regional: "3 days", national: "4 days", remote: "6-7 days" } },
 ];
 
-// City-specific base shipping rate (what Delhivery/standard would charge) from the shop's city.
-// Any city typed here shows an exact price instead of the generic zone estimate below.
+// Actual Delhivery 2026 Surface rates + ₹5 margin, 1kg max, prepaid
+// Jaipur (302) se sabse popular cities ke accurate rates:
 const CITY_SHIPPING = {
-  jaipur: { rate: 30, eta: "1 day" },
-  ajmer: { rate: 35, eta: "1 day" },
-  jodhpur: { rate: 40, eta: "1-2 days" },
-  udaipur: { rate: 45, eta: "1-2 days" },
-  kota: { rate: 40, eta: "1-2 days" },
-  delhi: { rate: 50, eta: "1-2 days" },
-  "new delhi": { rate: 50, eta: "1-2 days" },
-  gurgaon: { rate: 55, eta: "2 days" },
-  gurugram: { rate: 55, eta: "2 days" },
-  noida: { rate: 55, eta: "2 days" },
-  chandigarh: { rate: 70, eta: "2-3 days" },
-  lucknow: { rate: 90, eta: "2-3 days" },
-  ahmedabad: { rate: 100, eta: "2-3 days" },
-  surat: { rate: 105, eta: "2-3 days" },
-  mumbai: { rate: 120, eta: "3-4 days" },
-  bombay: { rate: 120, eta: "3-4 days" },
-  pune: { rate: 125, eta: "3-4 days" },
-  bangalore: { rate: 130, eta: "3-4 days" },
-  bengaluru: { rate: 130, eta: "3-4 days" },
-  hyderabad: { rate: 130, eta: "3-4 days" },
-  chennai: { rate: 140, eta: "4-5 days" },
-  kolkata: { rate: 150, eta: "4-5 days" },
+  // Rajasthan (Same State)
+  jaipur:       { rate: 50,  eta: "Same day" },
+  ajmer:        { rate: 55,  eta: "1 day" },
+  jodhpur:      { rate: 60,  eta: "1-2 days" },
+  udaipur:      { rate: 60,  eta: "1-2 days" },
+  kota:         { rate: 60,  eta: "1-2 days" },
+  bikaner:      { rate: 65,  eta: "2 days" },
+  alwar:        { rate: 60,  eta: "1-2 days" },
+  bharatpur:    { rate: 60,  eta: "1-2 days" },
+  sikar:        { rate: 55,  eta: "1 day" },
+  pali:         { rate: 60,  eta: "1-2 days" },
+  barmer:       { rate: 70,  eta: "2 days" },
+  nagaur:       { rate: 60,  eta: "1-2 days" },
+  chittorgarh:  { rate: 65,  eta: "2 days" },
+  bhilwara:     { rate: 60,  eta: "1-2 days" },
+  // Delhi NCR (Regional)
+  delhi:        { rate: 75,  eta: "1-2 days" },
+  "new delhi":  { rate: 75,  eta: "1-2 days" },
+  gurgaon:      { rate: 80,  eta: "2 days" },
+  gurugram:     { rate: 80,  eta: "2 days" },
+  noida:        { rate: 80,  eta: "2 days" },
+  faridabad:    { rate: 80,  eta: "2 days" },
+  ghaziabad:    { rate: 80,  eta: "2 days" },
+  // UP (Regional)
+  agra:         { rate: 80,  eta: "2 days" },
+  lucknow:      { rate: 90,  eta: "2-3 days" },
+  kanpur:       { rate: 90,  eta: "2-3 days" },
+  varanasi:     { rate: 95,  eta: "3 days" },
+  prayagraj:    { rate: 95,  eta: "3 days" },
+  allahabad:    { rate: 95,  eta: "3 days" },
+  meerut:       { rate: 80,  eta: "2 days" },
+  // Haryana (Regional)
+  chandigarh:   { rate: 80,  eta: "2 days" },
+  ambala:       { rate: 80,  eta: "2 days" },
+  hisar:        { rate: 75,  eta: "2 days" },
+  rohtak:       { rate: 75,  eta: "2 days" },
+  // Punjab (Regional)
+  ludhiana:     { rate: 85,  eta: "2-3 days" },
+  amritsar:     { rate: 90,  eta: "2-3 days" },
+  jalandhar:    { rate: 85,  eta: "2-3 days" },
+  // MP (Regional)
+  indore:       { rate: 85,  eta: "2 days" },
+  bhopal:       { rate: 85,  eta: "2 days" },
+  gwalior:      { rate: 80,  eta: "2 days" },
+  jabalpur:     { rate: 90,  eta: "2-3 days" },
+  // Gujarat (Regional)
+  ahmedabad:    { rate: 85,  eta: "2 days" },
+  surat:        { rate: 90,  eta: "2-3 days" },
+  vadodara:     { rate: 85,  eta: "2 days" },
+  rajkot:       { rate: 90,  eta: "2-3 days" },
+  // Maharashtra (National)
+  mumbai:       { rate: 145, eta: "3-4 days" },
+  pune:         { rate: 145, eta: "3-4 days" },
+  nagpur:       { rate: 140, eta: "3-4 days" },
+  nashik:       { rate: 145, eta: "3-4 days" },
+  aurangabad:   { rate: 145, eta: "3-4 days" },
+  thane:        { rate: 145, eta: "3-4 days" },
+  // Karnataka (National)
+  bangalore:    { rate: 145, eta: "4-5 days" },
+  bengaluru:    { rate: 145, eta: "4-5 days" },
+  mysore:       { rate: 150, eta: "4-5 days" },
+  hubli:        { rate: 150, eta: "4-5 days" },
+  // Telangana / AP (National)
+  hyderabad:    { rate: 145, eta: "4-5 days" },
+  secunderabad: { rate: 145, eta: "4-5 days" },
+  visakhapatnam:{ rate: 150, eta: "4-5 days" },
+  vijayawada:   { rate: 150, eta: "4-5 days" },
+  // Tamil Nadu (National)
+  chennai:      { rate: 150, eta: "4-5 days" },
+  coimbatore:   { rate: 150, eta: "4-5 days" },
+  madurai:      { rate: 155, eta: "5 days" },
+  // Kerala (National)
+  kochi:        { rate: 155, eta: "5 days" },
+  cochin:       { rate: 155, eta: "5 days" },
+  trivandrum:   { rate: 160, eta: "5-6 days" },
+  thiruvananthapuram: { rate: 160, eta: "5-6 days" },
+  kozhikode:    { rate: 155, eta: "5 days" },
+  // West Bengal (National)
+  kolkata:      { rate: 150, eta: "4-5 days" },
+  // Odisha (National)
+  bhubaneswar:  { rate: 150, eta: "4-5 days" },
+  // Bihar / Jharkhand (National)
+  patna:        { rate: 145, eta: "4-5 days" },
+  ranchi:       { rate: 145, eta: "4-5 days" },
+  // Uttarakhand (Regional)
+  dehradun:     { rate: 85,  eta: "2-3 days" },
+  haridwar:     { rate: 85,  eta: "2-3 days" },
+  // Himachal (Regional)
+  shimla:       { rate: 90,  eta: "3 days" },
+  // J&K (Remote — ODA surcharge applies)
+  jammu:        { rate: 220, eta: "6-8 days" },
+  srinagar:     { rate: 220, eta: "6-8 days" },
+  // North East (Remote)
+  guwahati:     { rate: 220, eta: "6-8 days" },
+  imphal:       { rate: 220, eta: "7-8 days" },
+  shillong:     { rate: 220, eta: "7-8 days" },
+  agartala:     { rate: 220, eta: "7-8 days" },
 };
 
 // States immediately bordering the shop's state — used as a fallback zone when the
 // typed city isn't in the CITY_SHIPPING table above.
-const REGIONAL_STATES = ["Gujarat", "Punjab", "Haryana", "Uttar Pradesh", "Madhya Pradesh"];
-const REMOTE_STATES = ["Assam"];
+const REGIONAL_STATES = ["Gujarat", "Punjab", "Haryana", "Uttar Pradesh", "Madhya Pradesh", "Uttarakhand", "Himachal Pradesh", "Delhi"];
+const REMOTE_STATES = ["Assam", "Meghalaya", "Manipur", "Mizoram", "Nagaland", "Tripura", "Arunachal Pradesh", "Sikkim", "Jammu and Kashmir", "Ladakh"];
 
-// Maps a pincode's first 3 digits to a known city, so typing just a pincode
-// (without a matching city name) still gets the exact CITY_SHIPPING rate.
 const PINCODE_PREFIX_CITY = {
-  302: "jaipur", 303: "jaipur", 305: "ajmer", 342: "jodhpur", 313: "udaipur", 324: "kota",
-  110: "delhi", 122: "gurgaon", 201: "noida", 160: "chandigarh", 226: "lucknow",
-  380: "ahmedabad", 395: "surat", 400: "mumbai", 411: "pune", 560: "bangalore",
-  500: "hyderabad", 600: "chennai", 700: "kolkata",
+  // Rajasthan
+  302: "jaipur", 303: "jaipur", 304: "jaipur",
+  305: "ajmer", 306: "ajmer",
+  342: "jodhpur", 343: "jodhpur",
+  313: "udaipur", 314: "udaipur",
+  324: "kota", 325: "kota",
+  334: "bikaner", 335: "bikaner",
+  301: "alwar",
+  321: "bharatpur",
+  332: "sikar",
+  306: "pali",
+  344: "barmer",
+  341: "nagaur",
+  312: "chittorgarh",
+  311: "bhilwara",
+  // Delhi NCR
+  110: "delhi", 111: "delhi",
+  122: "gurgaon", 123: "gurgaon",
+  201: "noida", 203: "noida",
+  121: "faridabad",
+  201: "ghaziabad",
+  // UP
+  282: "agra", 283: "agra",
+  226: "lucknow", 227: "lucknow",
+  208: "kanpur", 209: "kanpur",
+  221: "varanasi", 232: "varanasi",
+  211: "prayagraj",
+  250: "meerut",
+  // Haryana
+  160: "chandigarh",
+  134: "ambala",
+  125: "hisar",
+  124: "rohtak",
+  // Punjab
+  141: "ludhiana",
+  143: "amritsar",
+  144: "jalandhar",
+  // MP
+  452: "indore", 453: "indore",
+  462: "bhopal", 463: "bhopal",
+  474: "gwalior",
+  482: "jabalpur",
+  // Gujarat
+  380: "ahmedabad", 382: "ahmedabad",
+  395: "surat", 394: "surat",
+  390: "vadodara",
+  360: "rajkot",
+  // Maharashtra
+  400: "mumbai", 401: "mumbai", 402: "mumbai",
+  411: "pune", 412: "pune",
+  440: "nagpur",
+  422: "nashik",
+  431: "aurangabad",
+  400: "thane",
+  // Karnataka
+  560: "bangalore", 562: "bangalore", 563: "bangalore",
+  570: "mysore",
+  580: "hubli",
+  // Telangana / AP
+  500: "hyderabad", 501: "hyderabad", 502: "hyderabad",
+  530: "visakhapatnam",
+  520: "vijayawada",
+  // Tamil Nadu
+  600: "chennai", 601: "chennai", 602: "chennai",
+  641: "coimbatore",
+  625: "madurai",
+  // Kerala
+  682: "kochi", 683: "kochi",
+  695: "trivandrum",
+  673: "kozhikode",
+  // West Bengal
+  700: "kolkata", 711: "kolkata",
+  // Odisha
+  751: "bhubaneswar",
+  // Bihar
+  800: "patna", 801: "patna",
+  // Jharkhand
+  834: "ranchi",
+  // Uttarakhand
+  248: "dehradun",
+  249: "haridwar",
+  // Himachal
+  171: "shimla",
+  // J&K
+  180: "jammu",
+  190: "srinagar",
+  // North East
+  781: "guwahati",
+  795: "imphal",
+  793: "shillong",
+  799: "agartala",
 };
 
 const INDIAN_STATES = ["Andhra Pradesh","Assam","Bihar","Chhattisgarh","Delhi","Gujarat","Haryana","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Odisha","Punjab","Rajasthan","Tamil Nadu","Telangana","Uttar Pradesh","Uttarakhand","West Bengal"];
@@ -658,469 +816,4 @@ function CartPage({ items, subtotal, onInc, onDec, onRemove, onBackToShop, onCre
         <p className="text-xs text-[#5A5A5E] mb-3">Enter your city or pincode — every courier below picks up from our store once packed and delivers straight to your door.</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div><label className="text-xs text-[#8B8D92] block mb-1">City</label>
-            <input value={city} onChange={(e) => { setCity(e.target.value); setSelectedCourier(null); }} placeholder="e.g. Jaipur" className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" /></div>
-          <div><label className="text-xs text-[#8B8D92] block mb-1">State</label>
-            <select value={state} onChange={(e) => { setState(e.target.value); setSelectedCourier(null); }} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]">
-              {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select></div>
-          <div><label className="text-xs text-[#8B8D92] block mb-1">Pincode</label>
-            <input value={pincode} onChange={(e) => { setPincode(e.target.value.replace(/\D/g, "").slice(0, 6)); setSelectedCourier(null); }} placeholder="302001" className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" /></div>
-        </div>
-        <div className="space-y-2">
-          {courierOptions.map((c) => (
-            <button key={c.id} onClick={() => setSelectedCourier(c)} className={`w-full flex items-center justify-between p-3 rounded-lg border text-left ${selectedCourier?.id === c.id ? "border-[#E8571F] bg-[#E8571F]/10" : "border-[#2A2A2E]"}`}>
-              <div className="flex items-center gap-2.5">
-                <CourierLogo name={c.name} />
-                <div><p className="text-sm font-medium">{c.name}</p><p className="text-xs text-[#5A5A5E]">Estimated {c.eta}</p></div>
-              </div>
-              <span className="font-display font-bold text-sm">{inr(c.price)}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4 mb-6">
-        <div className="flex items-center justify-between text-sm mb-1"><span className="text-[#8B8D92]">Subtotal</span><span>{inr(subtotal)}</span></div>
-        <div className="flex items-center justify-between text-sm mb-2"><span className="text-[#8B8D92]">Shipping ({selectedCourier ? selectedCourier.name : "select above"})</span><span>{selectedCourier ? inr(selectedCourier.price) : "—"}</span></div>
-        <div className="flex items-center justify-between font-display text-xl font-bold pt-2 border-t border-[#2A2A2E]"><span>Total</span><span>{selectedCourier ? inr(subtotal + selectedCourier.price) : "—"}</span></div>
-      </div>
-
-      {step === "cart" && (
-        <button disabled={!selectedCourier || !city.trim()} onClick={() => setStep("checkout")} className="w-full bg-[#E8571F] disabled:bg-[#2A2A2E] disabled:text-[#5A5A5E] text-[#141416] font-medium py-3 rounded-lg hover:bg-[#D14A15] flex items-center justify-center gap-1.5">
-          Proceed to Checkout <Icon name="chevron-right" size={16} />
-        </button>
-      )}
-      {step === "checkout" && (
-        <CheckoutForm subtotal={subtotal} shippingCharge={selectedCourier.price} courier={selectedCourier.name} city={city} state={state} pincode={pincode} onBack={() => setStep("cart")}
-          onPlace={(data) => onCreatePendingOrder({ ...data, city, state, courier: selectedCourier.name, courierEta: selectedCourier.eta, shippingCharge: selectedCourier.price })} />
-      )}
-    </div>
-  );
-}
-
-function CheckoutForm({ subtotal, shippingCharge, courier, city, state, pincode, onBack, onPlace }) {
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [altPhone, setAltPhone] = useState("");
-  const [houseNo, setHouseNo] = useState("");
-  const [street, setStreet] = useState("");
-  const [landmark, setLandmark] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const valid = name.trim() && /^[0-9]{10}$/.test(phone.trim()) && houseNo.trim() && street.trim() && /^[0-9]{6}$/.test(pincode.trim());
-
-  function handlePlace() {
-    if (!valid) { setError("Please fill Name, Phone, House/Flat No., Street and a valid 6-digit Pincode."); return; }
-    setError(""); setSubmitting(true);
-    const fullAddress = `${houseNo.trim()}, ${street.trim()}${landmark.trim() ? ", Near " + landmark.trim() : ""}, ${city}, ${state} - ${pincode.trim()}`;
-    onPlace({
-      name: name.trim(), phone: phone.trim(), altPhone: altPhone.trim(),
-      houseNo: houseNo.trim(), street: street.trim(), landmark: landmark.trim(), pincode: pincode.trim(),
-      address: fullAddress,
-    });
-  }
-
-  return (
-    <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-[#8B8D92] hover:text-[#F2F0EB] mb-3"><Icon name="arrow-left" size={12} /> Back to shipping</button>
-      <h2 className="font-display text-xl font-bold mb-3">Checkout</h2>
-      <p className="text-xs text-[#5A5A5E] mb-3">Delivering to {city}, {state} via {courier}</p>
-      <div className="space-y-3">
-        <div><label className="text-xs text-[#8B8D92] block mb-1">Full Name *</label><input value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="Rahul Sharma" /></div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><label className="text-xs text-[#8B8D92] block mb-1">Phone Number *</label><input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="9876543210" /></div>
-          <div><label className="text-xs text-[#8B8D92] block mb-1">Alternate Phone</label><input value={altPhone} onChange={(e) => setAltPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="Optional" /></div>
-        </div>
-        <p className="text-[10px] uppercase tracking-wide text-[#5A5A5E] font-mono pt-1">Delivery Address — step by step, so the courier can find you</p>
-        <div><label className="text-xs text-[#8B8D92] block mb-1">House / Flat No. & Building *</label><input value={houseNo} onChange={(e) => setHouseNo(e.target.value)} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="e.g. B-204, Shree Apartments" /></div>
-        <div><label className="text-xs text-[#8B8D92] block mb-1">Street / Area / Locality *</label><input value={street} onChange={(e) => setStreet(e.target.value)} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="e.g. MI Road" /></div>
-        <div><label className="text-xs text-[#8B8D92] block mb-1">Landmark</label><input value={landmark} onChange={(e) => setLandmark(e.target.value)} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="Optional, e.g. Near XYZ" /></div>
-        <p className="text-xs text-[#5A5A5E]">City: <span className="text-[#B8B9BD]">{city}</span> · State: <span className="text-[#B8B9BD]">{state}</span> · Pincode: <span className="text-[#B8B9BD]">{pincode}</span> (chosen on the previous step)</p>
-        <div className="flex items-center gap-2 bg-[#141416] border border-[#E8571F]/30 rounded-lg px-3 py-2.5">
-          <Icon name="check-circle" size={15} className="text-[#E8571F]" />
-          <span className="text-sm text-[#F2F0EB]">Payment: <strong>Scan & Pay (UPI QR Code)</strong> — orders are prepaid only</span>
-        </div>
-        {error && <p className="text-xs text-[#C4635A] flex items-center gap-1"><Icon name="alert-circle" size={13} /> {error}</p>}
-        <div className="pt-2 border-t border-[#2A2A2E] space-y-1 text-sm">
-          <div className="flex justify-between text-[#8B8D92]"><span>Item Cost</span><span>{inr(subtotal)}</span></div>
-          <div className="flex justify-between text-[#8B8D92]"><span>Delivery Charge</span><span>{inr(shippingCharge)}</span></div>
-          <div className="flex justify-between font-display text-lg font-bold"><span>Total</span><span>{inr(subtotal + shippingCharge)}</span></div>
-        </div>
-        <button onClick={handlePlace} disabled={submitting} className="w-full bg-[#E8571F] disabled:opacity-60 text-[#141416] font-medium py-2.5 rounded-lg hover:bg-[#D14A15] flex items-center justify-center gap-2">
-          {submitting ? <Icon name="loader" size={16} /> : null}Continue to Payment
-        </button>
-      </div>
-    </div>
-
-  );
-}
-
-// Generates a real scannable UPI QR code (upi://pay deep link) for the order total.
-// It will work with any UPI app (GPay/PhonePe/Paytm/BHIM) as long as UPI_ID above is
-// a genuine UPI ID — replace the placeholder before going live.
-function PaymentScannerView({ order, onConfirm, onCancel }) {
-  const [paying, setPaying] = useState(false);
-  const [payError, setPayError] = useState("");
-
-  if (!order) return <EmptyState icon="alert-circle" title="No order to pay for" subtitle="Please go back to your cart and check out again." />;
-
-  // Opens Razorpay's own hosted Checkout popup — inside it the customer can pay by
-  // scanning a UPI QR code, or via UPI intent / card / netbanking / wallet, whichever
-  // they prefer. On success we mark the order Paid and show the tracking number.
-  // On failure or if they close the popup, nothing changes — the order stays Pending
-  // and they land right back on this same screen to try again.
-  function openRazorpay() {
-    if (!window.Razorpay) { setPayError("Payment gateway didn't load. Check your connection and refresh."); return; }
-    setPayError(""); setPaying(true);
-    const rzp = new window.Razorpay({
-      key: RAZORPAY_KEY_ID,
-      amount: Math.round(order.total * 100), // paise
-      currency: "INR",
-      name: "BikeModzHub",
-      description: `Order ${order.id}`,
-      prefill: { name: order.customerName, contact: order.phone },
-      notes: { order_id: order.id },
-      theme: { color: "#E8571F" },
-      handler: function (response) {
-        setPaying(false);
-        onConfirm(order.id, response.razorpay_payment_id);
-      },
-      modal: {
-        ondismiss: function () { setPaying(false); },
-      },
-    });
-    rzp.on("payment.failed", function () {
-      setPaying(false);
-      setPayError("Payment failed. You can try again below.");
-    });
-    rzp.open();
-  }
-
-  return (
-    <div className="max-w-md mx-auto px-4 py-10">
-      <h1 className="font-display text-3xl font-bold mb-1">Complete Payment</h1>
-      <p className="text-[#8B8D92] text-sm mb-6">Order <span className="font-mono text-[#E8571F]">{order.id}</span> · pay securely to confirm your order.</p>
-      <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-6 flex flex-col items-center">
-        <div className="w-full flex flex-col items-center py-6 mb-2">
-          <Icon name="package" size={40} className="text-[#E8571F] mb-3" />
-          <p className="font-display text-4xl font-bold mb-1">{inr(order.total)}</p>
-          <p className="text-xs text-[#8B8D92]">Scan UPI QR, or pay by card / netbanking / wallet in the next step</p>
-        </div>
-        <div className="w-full space-y-1 text-sm border-t border-[#2A2A2E] pt-3 mb-4">
-          <div className="flex justify-between text-[#8B8D92]"><span>Item Cost</span><span>{inr(order.subtotal)}</span></div>
-          <div className="flex justify-between text-[#8B8D92]"><span>Delivery Charge ({order.courierPartner})</span><span>{inr(order.shippingCharge)}</span></div>
-        </div>
-        {payError && <p className="text-xs text-[#C4635A] flex items-center gap-1 mb-3"><Icon name="alert-circle" size={13} /> {payError}</p>}
-        <button onClick={openRazorpay} disabled={paying} className="w-full bg-[#E8571F] disabled:opacity-60 text-[#141416] font-medium py-2.5 rounded-lg hover:bg-[#D14A15] flex items-center justify-center gap-2 mb-2">
-          {paying ? <Icon name="loader" size={16} /> : <Icon name="check-circle" size={16} />} Pay {inr(order.total)} Now
-        </button>
-        <button onClick={() => onCancel(order.id)} className="text-xs text-[#8B8D92] hover:text-[#F2F0EB]">Cancel and go back to cart</button>
-      </div>
-    </div>
-  );
-}
-
-function TrackView({ orders, highlightId }) {
-  const [query, setQuery] = useState(highlightId || "");
-  const [found, setFound] = useState(null);
-  const [searched, setSearched] = useState(false);
-  const [liveTracking, setLiveTracking] = useState(null); // { status, location, updatedAt } from shipping-backend, if deployed
-  const [liveTrackingError, setLiveTrackingError] = useState(false);
-
-  useEffect(() => { if (highlightId) { setFound(orders.find((o) => o.id === highlightId) || null); setSearched(true); } }, [highlightId, orders]);
-
-  // Once handed to the courier and an AWB is on file, try the shipping-backend for the
-  // real live Delhivery status. If the backend isn't deployed/reachable, fail quietly —
-  // the courier's own tracking page link (rendered below) still works either way.
-  useEffect(() => {
-    setLiveTracking(null); setLiveTrackingError(false);
-    if (!found?.trackingNumber || !["Picked Up", "Out for Delivery", "Delivered"].includes(found.orderStatus)) return;
-    if (!SHIPPING_BACKEND_URL || SHIPPING_BACKEND_URL.includes("localhost")) return;
-    fetch(`${SHIPPING_BACKEND_URL}/api/track/${encodeURIComponent(found.trackingNumber)}`)
-      .then((r) => { if (!r.ok) throw new Error("bad response"); return r.json(); })
-      .then(setLiveTracking)
-      .catch(() => setLiveTrackingError(true));
-  }, [found]);
-
-  function handleSearch() {
-    const q = query.trim().toLowerCase();
-    setFound(orders.find((o) => o.id.toLowerCase() === q || o.phone === q.replace(/\D/g, "")) || null);
-    setSearched(true);
-  }
-
-  return (
-    <div className="max-w-lg mx-auto px-4 py-10">
-      <h1 className="font-display text-3xl font-bold mb-1">Track Your Order</h1>
-      <p className="text-[#8B8D92] text-sm mb-6">Enter your Order ID or phone number.</p>
-      <div className="flex gap-2 mb-6">
-        <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} placeholder="e.g. ORD12345678 or 9876543210" className="flex-1 bg-[#1C1C1E] border border-[#2A2A2E] rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#E8571F]" />
-        <button onClick={handleSearch} className="bg-[#E8571F] text-[#141416] font-medium px-4 rounded-lg hover:bg-[#D14A15]"><Icon name="search" size={16} /></button>
-      </div>
-      {searched && !found && <EmptyState icon="alert-circle" title="No order found" subtitle="Double-check the Order ID or phone number." />}
-      {found && found.paymentStatus === "Pending" && (
-        <div className="space-y-4">
-          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
-            <div className="flex items-center justify-between mb-1">
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-[#8B8D92] font-mono">Order</p>
-                <span className="font-mono text-lg font-bold text-[#E8571F]">{found.id}</span>
-              </div>
-              <Badge tone="pending">Payment Pending</Badge>
-            </div>
-            <p className="text-xs text-[#8B8D92]">Placed on {new Date(found.createdAt).toLocaleString("en-IN")}</p>
-            <div className="mt-3 bg-[#C4635A]/10 border border-[#C4635A]/30 rounded-lg px-3 py-2 flex items-center gap-2">
-              <Icon name="alert-circle" size={15} className="text-[#C4635A]" />
-              <span className="text-sm text-[#F2F0EB]">Payment not completed yet. This order won't be packed or shipped until payment is done.</span>
-            </div>
-          </div>
-          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
-            <h3 className="text-sm font-medium mb-2">Items</h3>
-            {found.items.map((i) => <div key={i.id} className="flex justify-between text-sm py-1 text-[#B8B9BD]"><span>{i.name} × {i.qty}</span><span>{inr(i.price * i.qty)}</span></div>)}
-            <div className="flex justify-between text-sm pt-2 mt-2 border-t border-[#2A2A2E]"><span>Item Cost</span><span>{inr(found.subtotal || 0)}</span></div>
-            <div className="flex justify-between text-sm pt-1"><span>Delivery Charge</span><span>{inr(found.shippingCharge || 0)}</span></div>
-            <div className="flex justify-between text-sm pt-1 font-medium"><span>Total</span><span>{inr(found.total)}</span></div>
-          </div>
-        </div>
-      )}
-      {found && found.paymentStatus !== "Pending" && (
-        <div className="space-y-4">
-          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
-            <div className="flex items-center justify-between mb-1">
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-[#8B8D92] font-mono">Tracking Number</p>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-lg font-bold text-[#E8571F]">{found.id}</span>
-                  <button onClick={() => navigator.clipboard?.writeText(found.id)} title="Copy tracking number" className="text-[#8B8D92] hover:text-[#F2F0EB]"><Icon name="copy" size={14} /></button>
-                </div>
-              </div>
-              <Badge tone="live">{found.orderStatus}</Badge>
-            </div>
-            <p className="text-xs text-[#8B8D92]">Placed on {new Date(found.createdAt).toLocaleString("en-IN")}</p>
-            {found.courierPartner && <p className="text-xs text-[#8B8D92] mt-1 flex items-center gap-1"><Icon name="truck" size={12} /> Via {found.courierPartner}</p>}
-            <div className="mt-3 bg-[#E8571F]/10 border border-[#E8571F]/30 rounded-lg px-3 py-2 flex items-center gap-2">
-              <Icon name="clock" size={15} className="text-[#E8571F]" />
-              <span className="text-sm text-[#F2F0EB]">Expected delivery: <strong>{estimateDeliveryWindow(found)}</strong></span>
-            </div>
-            {["Picked Up", "Out for Delivery", "Delivered"].includes(found.orderStatus) && found.trackingNumber && liveTracking && (
-              <div className="mt-2 bg-[#1F3E2E]/40 border border-[#7CA982]/30 rounded-lg px-3 py-2">
-                <p className="text-xs text-[#7CA982] font-mono uppercase tracking-wide mb-0.5">Live from {found.courierPartner}</p>
-                <p className="text-sm text-[#F2F0EB]">{liveTracking.status}{liveTracking.location ? ` · ${liveTracking.location}` : ""}</p>
-                {liveTracking.updatedAt && <p className="text-[10px] text-[#5A5A5E] mt-0.5">Updated {new Date(liveTracking.updatedAt).toLocaleString("en-IN")}</p>}
-              </div>
-            )}
-            {["Picked Up", "Out for Delivery", "Delivered"].includes(found.orderStatus) && !liveTracking && courierTrackingUrl(found.courierPartner, found.trackingNumber) && (
-              <a href={courierTrackingUrl(found.courierPartner, found.trackingNumber)} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center justify-center gap-1.5 bg-[#2A2A2E] hover:bg-[#3A3A3E] text-[#F2F0EB] text-sm font-medium py-2 rounded-lg">
-                <Icon name="truck" size={14} /> Live status on {found.courierPartner}'s site
-              </a>
-            )}
-          </div>
-          <OrderGauge status={found.orderStatus} />
-          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
-            <h3 className="text-sm font-medium mb-2">Items</h3>
-            {found.items.map((i) => <div key={i.id} className="flex justify-between text-sm py-1 text-[#B8B9BD]"><span>{i.name} × {i.qty}{i.deliveryTime ? ` (${i.deliveryTime})` : ""}</span><span>{inr(i.price * i.qty)}</span></div>)}
-            <div className="flex justify-between text-sm pt-2 mt-2 border-t border-[#2A2A2E]"><span>Item Cost</span><span>{inr(found.subtotal || 0)}</span></div>
-            <div className="flex justify-between text-sm pt-1"><span>Delivery Charge</span><span>{inr(found.shippingCharge || 0)}</span></div>
-            <div className="flex justify-between text-sm pt-1 font-medium"><span>Total</span><span>{inr(found.total)}</span></div>
-          </div>
-          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4 text-sm text-[#B8B9BD] space-y-1.5">
-            <h3 className="text-xs uppercase tracking-wide text-[#8B8D92] font-mono mb-1">Delivery Contact & Address</h3>
-            <p><span className="text-[#8B8D92]">Name:</span> {found.customerName}</p>
-            <p><span className="text-[#8B8D92]">Phone:</span> {found.phone}{found.altPhone ? ` (Alt: ${found.altPhone})` : ""}</p>
-            {found.houseNo ? (
-              <>
-                <p><span className="text-[#8B8D92]">House/Building:</span> {found.houseNo}</p>
-                <p><span className="text-[#8B8D92]">Street/Area:</span> {found.street}</p>
-                {found.landmark && <p><span className="text-[#8B8D92]">Landmark:</span> {found.landmark}</p>}
-                <p><span className="text-[#8B8D92]">City/State:</span> {found.city}, {found.state} - {found.pincode}</p>
-              </>
-            ) : (
-              <p><span className="text-[#8B8D92]">Address:</span> {found.address}, {found.city}, {found.state}</p>
-            )}
-            <p className="pt-1"><span className="text-[#8B8D92]">Payment:</span> {found.paymentMethod} — {found.paymentStatus}</p>
-            {STATUSES.indexOf(found.orderStatus) >= 1 && (
-              <p className="pt-2 border-t border-[#2A2A2E] mt-2 text-xs"><span className="text-[#8B8D92]">Picked up by courier from:</span> {found.pickupAddress || SHOP_ADDRESS}</p>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AdminView({ products, setProducts, orders, setOrders, showToast }) {
-  const [authed, setAuthed] = useState(false);
-  const [pw, setPw] = useState("");
-  const [pwError, setPwError] = useState("");
-  const [tab, setTab] = useState("orders");
-
-  if (!authed) {
-    return (
-      <div className="max-w-sm mx-auto px-4 py-16">
-        <h1 className="font-display text-2xl font-bold mb-4 text-center">Admin Login</h1>
-        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (pw === ADMIN_PASSWORD ? setAuthed(true) : setPwError("Wrong password"))} placeholder="Password" className="w-full bg-[#1C1C1E] border border-[#2A2A2E] rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#E8571F] mb-2" />
-        {pwError && <p className="text-xs text-[#C4635A] mb-2">{pwError}</p>}
-        <button onClick={() => pw === ADMIN_PASSWORD ? setAuthed(true) : setPwError("Wrong password")} className="w-full bg-[#E8571F] text-[#141416] font-medium py-2.5 rounded-lg hover:bg-[#D14A15]">Login</button>
-      </div>
-    );
-  }
-  return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-display text-3xl font-bold">Admin Panel</h1>
-        <button onClick={() => setAuthed(false)} className="flex items-center gap-1.5 text-sm text-[#8B8D92] hover:text-[#F2F0EB]"><Icon name="logout" size={14} /> Logout</button>
-      </div>
-      <div className="flex gap-2 mb-6">
-        {["orders", "products"].map((t) => <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize ${tab === t ? "bg-[#E8571F] text-[#141416]" : "bg-[#1C1C1E] text-[#B8B9BD] border border-[#2A2A2E]"}`}>{t}</button>)}
-      </div>
-      {tab === "orders" ? <AdminOrders orders={orders} setOrders={setOrders} showToast={showToast} /> : <AdminProducts products={products} setProducts={setProducts} showToast={showToast} />}
-    </div>
-  );
-}
-
-function AdminOrders({ orders, setOrders, showToast }) {
-  async function updateStatus(id, status) {
-    const next = orders.map((o) => o.id === id ? { ...o, orderStatus: status } : o);
-    setOrders(next); showToast(`Order ${id} → ${status}`);
-
-    // The moment you mark an order "Packed", we ask the shipping-backend to book the
-    // Delhivery shipment and request a pickup automatically — no manual AWB typing.
-    // Needs the backend deployed (see shipping-backend/README.md) with your pickup
-    // location registered on Delhivery's dashboard.
-    const order = orders.find((o) => o.id === id);
-    const backendReady = SHIPPING_BACKEND_URL && !SHIPPING_BACKEND_URL.includes("localhost");
-    if (status === "Packed" && order && !order.trackingNumber && backendReady) {
-      try {
-        showToast("Booking Delhivery pickup…");
-        const resp = await fetch(`${SHIPPING_BACKEND_URL}/api/orders/ship`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ order }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || !data.waybill) throw new Error(data.error || "ship failed");
-        const withWaybill = next.map((o) => o.id === id ? { ...o, trackingNumber: data.waybill, orderStatus: "Picked Up" } : o);
-        setOrders(withWaybill); saveOrders(withWaybill);
-        showToast(`Delhivery pickup booked — AWB ${data.waybill}`);
-      } catch (e) {
-        showToast("Auto-pickup didn't go through — you can still paste an AWB manually below once you book it yourself.");
-      }
-    }
-  }
-  function updateTracking(id, trackingNumber) {
-    const next = orders.map((o) => o.id === id ? { ...o, trackingNumber } : o);
-    setOrders(next);
-  }
-  function markPaid(id) {
-    const next = orders.map((o) => o.id === id ? { ...o, paymentStatus: "Paid" } : o);
-    setOrders(next); showToast(`Order ${id} marked Paid`);
-  }
-  if (orders.length === 0) return <EmptyState icon="clipboard-list" title="No orders yet" subtitle="Orders placed by customers will show up here." />;
-  return (
-    <div className="space-y-3">
-      {orders.map((o) => (
-        <div key={o.id} className={`bg-[#1C1C1E] border rounded-xl p-4 ${o.paymentStatus === "Pending" ? "border-[#C4635A]/40" : "border-[#2A2A2E]"}`}>
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <div><span className="font-mono text-sm text-[#E8571F]">{o.id}</span><span className="text-xs text-[#5A5A5E] ml-2">{new Date(o.createdAt).toLocaleString("en-IN")}</span></div>
-            <select value={o.orderStatus} onChange={(e) => updateStatus(o.id, e.target.value)} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#E8571F]">
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <p className="text-sm text-[#B8B9BD] mb-1">{o.customerName} · {o.phone}{o.altPhone ? ` / ${o.altPhone}` : ""}</p>
-          <p className="text-xs text-[#5A5A5E] mb-1">{o.address}, {o.city}, {o.state} - {o.pincode}</p>
-          <p className="text-xs text-[#5A5A5E] mb-2 italic">Pickup from: {o.pickupAddress || SHOP_ADDRESS}</p>
-          {o.courierPartner && <p className="text-xs text-[#8B8D92] mb-2 flex items-center gap-1"><Icon name="truck" size={12} /> {o.courierPartner} · shipping {inr(o.shippingCharge || 0)} · expected {estimateDeliveryWindow(o)}</p>}
-          <div className="text-xs text-[#8B8D92] space-y-0.5 mb-2">{o.items.map((i) => <div key={i.id}>{i.name} × {i.qty} — {inr(i.price * i.qty)} {i.deliveryTime ? `(${i.deliveryTime})` : ""}</div>)}</div>
-          {["Picked Up", "Out for Delivery", "Delivered"].includes(o.orderStatus) && (
-            <div className="mb-2">
-              <label className="text-[10px] uppercase tracking-wide text-[#5A5A5E] font-mono block mb-1">Courier AWB / Tracking Number</label>
-              <input defaultValue={o.trackingNumber || ""} onBlur={(e) => updateTracking(o.id, e.target.value.trim())} placeholder="Paste AWB from Delhivery/Shiprocket" className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#E8571F]" />
-            </div>
-          )}
-          <div className="flex items-center justify-between text-sm font-medium pt-2 border-t border-[#2A2A2E]">
-            <span className="flex items-center gap-2">
-              {o.paymentMethod} · <span className={o.paymentStatus === "Pending" ? "text-[#C4635A]" : ""}>{o.paymentStatus}</span>
-              {o.paymentStatus === "Pending" && <button onClick={() => markPaid(o.id)} className="text-xs bg-[#2A2A2E] hover:bg-[#3A3A3E] px-2 py-1 rounded">Mark Paid</button>}
-            </span>
-            <span>{inr(o.total)}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AdminProducts({ products, setProducts, showToast }) {
-  const [editing, setEditing] = useState(null);
-  const blank = { sku: "", name: "", category: "", price: "", stock: "", image: "", deliveryTime: "" };
-  const [form, setForm] = useState(blank);
-  const fileInputRef = useRef(null);
-
-  function startEdit(p) { setEditing(p.id); setForm(p); }
-  function startNew() { setEditing("new"); setForm(blank); }
-  function handleFile(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 4 * 1024 * 1024) { showToast("Image too large (max 4MB)"); return; }
-    const reader = new FileReader();
-    reader.onload = () => setForm((f) => ({ ...f, image: reader.result }));
-    reader.readAsDataURL(file);
-  }
-  function save() {
-    if (!form.name || !form.sku || form.price === "" || form.stock === "") { showToast("Fill required fields"); return; }
-    const cleaned = { ...form, price: Number(form.price), stock: Number(form.stock) };
-    let next;
-    if (editing === "new") next = [...products, { ...cleaned, id: uid("p") }];
-    else next = products.map((p) => p.id === editing ? { ...p, ...cleaned } : p);
-    setProducts(next); setEditing(null); showToast("Saved");
-  }
-  function remove(id) { setProducts(products.filter((p) => p.id !== id)); showToast("Deleted"); }
-
-  return (
-    <div>
-      <button onClick={startNew} className="mb-4 flex items-center gap-1.5 bg-[#E8571F] text-[#141416] font-medium px-3 py-2 rounded-lg text-sm hover:bg-[#D14A15]"><Icon name="plus" size={15} /> Add Part</button>
-      {editing && (
-        <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4 mb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-            <input placeholder="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
-            <input placeholder="Part name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
-            <input placeholder="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
-            <input placeholder="Delivery time e.g. 2-3 days" value={form.deliveryTime} onChange={(e) => setForm({ ...form, deliveryTime: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
-            <input placeholder="Price (₹)" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
-            <input placeholder="Stock qty" type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
-          </div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-16 h-16 bg-[#141416] border border-[#2A2A2E] rounded-lg overflow-hidden shrink-0"><PartVisual image={form.image} category={form.category} /></div>
-            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 bg-[#2A2A2E] px-3 py-2 rounded-lg text-sm hover:bg-[#3A3A3E]"><Icon name="upload" size={14} /> Upload Photo</button>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={save} className="bg-[#E8571F] text-[#141416] font-medium px-4 py-2 rounded-lg text-sm hover:bg-[#D14A15]">Save</button>
-            <button onClick={() => setEditing(null)} className="bg-[#2A2A2E] text-[#B8B9BD] px-4 py-2 rounded-lg text-sm">Cancel</button>
-          </div>
-        </div>
-      )}
-      <div className="space-y-2">
-        {products.map((p) => (
-          <div key={p.id} className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-lg p-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 bg-[#141416] rounded-lg overflow-hidden shrink-0"><PartVisual image={p.image} category={p.category} /></div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2"><Badge>{p.sku}</Badge><span className="text-sm font-medium truncate">{p.name}</span></div>
-                <p className="text-xs text-[#5A5A5E] mt-0.5">{p.category} · {inr(p.price)} · {p.stock} in stock{p.deliveryTime ? ` · ${p.deliveryTime}` : ""}</p>
-              </div>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <button onClick={() => startEdit(p)} className="text-xs bg-[#2A2A2E] px-3 py-1.5 rounded-lg hover:bg-[#3A3A3E]">Edit</button>
-              <button onClick={() => remove(p.id)} className="text-xs text-[#C4635A] hover:text-[#E07168]"><Icon name="trash" size={14} /></button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
-</script>
-</body>
-</html>
+            <input value={city} onChange={(e) => { setCity(e.target.value); setSelectedCourier(null); }} placeholder="e.g. Jaipur" className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 p
