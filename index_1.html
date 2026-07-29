@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BikeModzHub — Bike Spare Parts</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+  html, body { background:#141416; margin:0; }
+  .font-display { font-family: 'Rajdhani', sans-serif; letter-spacing: 0.01em; }
+  .font-body { font-family: 'Inter', sans-serif; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+  @keyframes spin3d { from { transform: rotateY(0deg) rotateX(8deg); } to { transform: rotateY(360deg) rotateX(8deg); } }
+  .gear-3d-wrap { perspective: 900px; }
+  .gear-3d { transform-style: preserve-3d; animation: spin3d 14s linear infinite; }
+
+  @keyframes bikeTilt { 0%, 100% { transform: rotateY(-20deg) rotateX(4deg); } 50% { transform: rotateY(20deg) rotateX(4deg); } }
+  .bike-3d-wrap { perspective: 800px; }
+  .bike-3d { transform-style: preserve-3d; animation: bikeTilt 6s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .bike-3d, .gear-3d { animation: none; } }
+
+  .tilt-card { transform-style: preserve-3d; transition: transform 0.15s ease-out, box-shadow 0.15s ease-out; will-change: transform; }
+  @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  .cart-bump { animation: bump 0.35s ease; }
+  @keyframes waPulse { 0% { box-shadow: 0 0 0 0 rgba(37,211,102,0.55); } 70% { box-shadow: 0 0 0 14px rgba(37,211,102,0); } 100% { box-shadow: 0 0 0 0 rgba(37,211,102,0); } }
+  .wa-pulse { animation: waPulse 2.2s infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .animate-spin { animation: spin 1s linear infinite; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ============================================================
+// CONFIG — edit these before going live
+// ============================================================
+const ADMIN_PASSWORD = "garage123";
+const WHATSAPP_NUMBER = "917073710305";
+// Razorpay Checkout key_id — this one is safe to put in client-side code, that's how
+// Razorpay's own Checkout.js is designed to be used (it opens their hosted payment
+// popup, which itself offers UPI QR / intent, cards, netbanking, wallets, etc.).
+const RAZORPAY_KEY_ID = "rzp_test_TId39M7DnsC2nB";
+// NOTE ON DELHIVERY: a Delhivery API key is a PRIVATE secret, unlike the Razorpay
+// key_id above. It is not wired in here because this file is a static page — every
+// visitor's browser can open "View Source" and read every constant in it. Pasting a
+// real Delhivery key into this file would publish it to anyone who visits the site,
+// letting them create/cancel shipments or read shipment data on your account. A key
+// like that must live on a server you control (env variable), never in browser code.
+// See the shipping-backend/ notes further down for how to wire it up safely.
+const SHOP_CITY = "Jaipur";
+const SHOP_STATE = "Rajasthan";
+const SHOP_ADDRESS = "Shop No. 12, Automobile Market, Near Chandpole Gate, Jaipur, Rajasthan - 302001"; // <-- REPLACE with your real pickup address
+// GST removed per site owner's request — pricing shown to customers is item cost + shipping only.
+// Your deployed shipping-backend URL (see shipping-backend/README.md — a separate small
+// server that safely holds your Delhivery API key and calls Delhivery on the site's
+// behalf). Defaults to a local testing address; update this once you deploy the backend
+// so live Delhivery tracking works for real visitors. Until then, Track Order still works
+// fine using the courier's own tracking page link (see courierTrackingUrl below).
+const SHIPPING_BACKEND_URL = "https://bikemodzhub-backend.onrender.com";
+
+// Two courier partners — real accounts connected via the backend (see shipping-backend/).
+const COURIERS = [
+  { id: "delhivery", name: "Delhivery", priceMultiplier: 1.0, express: false,
+    rates: { local: 45, sameState: 75, regional: 99, national: 139, remote: 199 },
+    eta: { local: "1 day", sameState: "2 days", regional: "3 days", national: "4-5 days", remote: "6-8 days" } },
+  { id: "shiprocket", name: "Shiprocket", priceMultiplier: 1.15, express: false,
+    rates: { local: 55, sameState: 89, regional: 109, national: 149, remote: 219 },
+    eta: { local: "Next day", sameState: "2 days", regional: "3 days", national: "4 days", remote: "6-7 days" } },
+];
+
+// City-specific base shipping rate (what Delhivery/standard would charge) from the shop's city.
+// Any city typed here shows an exact price instead of the generic zone estimate below.
+const CITY_SHIPPING = {
+  jaipur: { rate: 30, eta: "1 day" },
+  ajmer: { rate: 35, eta: "1 day" },
+  jodhpur: { rate: 40, eta: "1-2 days" },
+  udaipur: { rate: 45, eta: "1-2 days" },
+  kota: { rate: 40, eta: "1-2 days" },
+  delhi: { rate: 50, eta: "1-2 days" },
+  "new delhi": { rate: 50, eta: "1-2 days" },
+  gurgaon: { rate: 55, eta: "2 days" },
+  gurugram: { rate: 55, eta: "2 days" },
+  noida: { rate: 55, eta: "2 days" },
+  chandigarh: { rate: 70, eta: "2-3 days" },
+  lucknow: { rate: 90, eta: "2-3 days" },
+  ahmedabad: { rate: 100, eta: "2-3 days" },
+  surat: { rate: 105, eta: "2-3 days" },
+  mumbai: { rate: 120, eta: "3-4 days" },
+  bombay: { rate: 120, eta: "3-4 days" },
+  pune: { rate: 125, eta: "3-4 days" },
+  bangalore: { rate: 130, eta: "3-4 days" },
+  bengaluru: { rate: 130, eta: "3-4 days" },
+  hyderabad: { rate: 130, eta: "3-4 days" },
+  chennai: { rate: 140, eta: "4-5 days" },
+  kolkata: { rate: 150, eta: "4-5 days" },
+};
+
+// States immediately bordering the shop's state — used as a fallback zone when the
+// typed city isn't in the CITY_SHIPPING table above.
+const REGIONAL_STATES = ["Gujarat", "Punjab", "Haryana", "Uttar Pradesh", "Madhya Pradesh"];
+const REMOTE_STATES = ["Assam"];
+
+// Maps a pincode's first 3 digits to a known city, so typing just a pincode
+// (without a matching city name) still gets the exact CITY_SHIPPING rate.
+const PINCODE_PREFIX_CITY = {
+  302: "jaipur", 303: "jaipur", 305: "ajmer", 342: "jodhpur", 313: "udaipur", 324: "kota",
+  110: "delhi", 122: "gurgaon", 201: "noida", 160: "chandigarh", 226: "lucknow",
+  380: "ahmedabad", 395: "surat", 400: "mumbai", 411: "pune", 560: "bangalore",
+  500: "hyderabad", 600: "chennai", 700: "kolkata",
+};
+
+const INDIAN_STATES = ["Andhra Pradesh","Assam","Bihar","Chhattisgarh","Delhi","Gujarat","Haryana","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Odisha","Punjab","Rajasthan","Tamil Nadu","Telangana","Uttar Pradesh","Uttarakhand","West Bengal"];
+
+const STATUSES = ["Placed", "Packed", "Picked Up", "Out for Delivery", "Delivered"];
+const STATUS_ICONS = { Placed: "clipboard-list", Packed: "package-check", "Picked Up": "truck", "Out for Delivery": "map-pin", Delivered: "home" };
+
+const SEED_PRODUCTS = [
+  { id: "p1", sku: "BRK-001", name: "Front Disc Brake Pad Set", category: "Brakes", price: 549, stock: 24, image: "", deliveryTime: "1-2 days" },
+  { id: "p2", sku: "CHN-014", name: "Heavy Duty Drive Chain (428H)", category: "Transmission", price: 899, stock: 15, image: "", deliveryTime: "2-3 days" },
+  { id: "p3", sku: "CLT-007", name: "Clutch Plate Set (7 Plates)", category: "Engine", price: 1299, stock: 10, image: "", deliveryTime: "3-4 days" },
+  { id: "p4", sku: "SPK-022", name: "Iridium Spark Plug", category: "Engine", price: 249, stock: 60, image: "", deliveryTime: "1-2 days" },
+  { id: "p5", sku: "SHK-003", name: "Rear Gas Shock Absorber (Pair)", category: "Suspension", price: 1899, stock: 8, image: "", deliveryTime: "5-7 days (imported)" },
+  { id: "p6", sku: "HDL-011", name: "Handlebar Grip Set", category: "Body", price: 199, stock: 40, image: "", deliveryTime: "1-2 days" },
+];
+
+const uid = (p = "id") => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const inr = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
+
+function shippingZone(customerState, customerCity) {
+  if (customerCity && customerCity.trim().toLowerCase() === SHOP_CITY.toLowerCase()) return "local";
+  if (customerState === SHOP_STATE) return "sameState";
+  if (REGIONAL_STATES.includes(customerState)) return "regional";
+  if (REMOTE_STATES.includes(customerState)) return "remote";
+  return "national";
+}
+function parseDaysRange(text) {
+  if (!text) return { min: 2, max: 4 };
+  if (/next day/i.test(text)) return { min: 1, max: 1 };
+  if (/same day/i.test(text)) return { min: 0, max: 0 };
+  const nums = (text.match(/\d+/g) || []).map(Number);
+  if (nums.length === 0) return { min: 2, max: 4 };
+  if (nums.length === 1) return { min: nums[0], max: nums[0] };
+  return { min: nums[0], max: nums[1] };
+}
+function fasterEta(text) {
+  if (/same day/i.test(text)) return "Same day";
+  const r = parseDaysRange(text);
+  const min = Math.max(1, r.min - 1), max = Math.max(min, r.max - 1);
+  return min === max ? `${min} day${min > 1 ? "s" : ""}` : `${min}-${max} days`;
+}
+// Returns the courier options with OUR OWN estimated price + ETA for the customer's
+// typed city/pincode/state — this is intentionally NOT the live courier API price,
+// so your shown price stays predictable and under your control (no surprise loss if
+// the real courier ends up charging more). The backend is still used separately to
+// actually book the real shipment once an order is placed.
+function getShippingOptions(city, state, pincode) {
+  const cityKey = (city || "").trim().toLowerCase();
+  let cityInfo = CITY_SHIPPING[cityKey];
+  if (!cityInfo && pincode && pincode.trim().length >= 3) {
+    const prefix = pincode.trim().slice(0, 3);
+    const mappedCity = PINCODE_PREFIX_CITY[prefix];
+    if (mappedCity) cityInfo = CITY_SHIPPING[mappedCity];
+  }
+  if (cityInfo) {
+    return COURIERS.map((c) => ({
+      id: c.id, name: c.name,
+      price: Math.round(cityInfo.rate * c.priceMultiplier),
+      eta: c.express ? fasterEta(cityInfo.eta) : cityInfo.eta,
+    }));
+  }
+  const zone = shippingZone(state, city);
+  return COURIERS.map((c) => ({ id: c.id, name: c.name, price: c.rates[zone], eta: c.eta[zone] }));
+}
+// Tries the real backend (Delhivery + Shiprocket live rates) first. If the backend
+// isn't running or reachable, returns null so the caller can fall back to the
+// estimated CITY_SHIPPING/zone pricing — the site never breaks either way.
+function addDays(dateInput, days) { const d = new Date(dateInput); d.setDate(d.getDate() + days); return d; }
+function estimateDeliveryWindow(order) {
+  const prepDays = (order.items || []).reduce((max, i) => Math.max(max, parseDaysRange(i.deliveryTime).max), 1);
+  const transit = parseDaysRange(order.courierEta);
+  const start = addDays(order.createdAt, prepDays + transit.min);
+  const end = addDays(order.createdAt, prepDays + transit.max);
+  const fmt = (d) => d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+  return start.toDateString() === end.toDateString() ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
+}
+// Builds a link to the courier's own tracking page, where the customer sees the
+// real live location/status once we've handed the package over (AWB entered by admin).
+function courierTrackingUrl(courierPartner, trackingNumber) {
+  if (!trackingNumber) return null;
+  const n = (courierPartner || "").toLowerCase();
+  if (n.includes("delhivery")) return `https://www.delhivery.com/track-v2/package/${encodeURIComponent(trackingNumber)}`;
+  if (n.includes("shiprocket")) return `https://shiprocket.co/tracking/${encodeURIComponent(trackingNumber)}`;
+  return null;
+}
+
+// ---------- Local storage helpers ----------
+// NOTE: This standalone file uses the browser's localStorage, which is saved
+// only on THIS computer/browser. Admin edits made here won't be seen by a
+// customer opening the file on a different computer — for that you need real
+// hosting + a shared database/backend (see chat notes).
+function loadProducts() {
+  try { const raw = localStorage.getItem("gh_products"); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function saveProducts(products) { try { localStorage.setItem("gh_products", JSON.stringify(products)); } catch {} }
+function loadOrders() {
+  try { const raw = localStorage.getItem("gh_orders"); return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+function saveOrders(orders) { try { localStorage.setItem("gh_orders", JSON.stringify(orders)); } catch {} }
+
+// ============================================================
+// Icon set (hand-drawn inline SVGs — no external icon library needed)
+// ============================================================
+function Icon({ name, size = 16, className = "" }) {
+  const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", className };
+  switch (name) {
+    case "cart": return <svg {...p}><circle cx="9" cy="21" r="1" fill="currentColor" stroke="none"/><circle cx="20" cy="21" r="1" fill="currentColor" stroke="none"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>;
+    case "plus": return <svg {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+    case "minus": return <svg {...p}><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+    case "trash": return <svg {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>;
+    case "package": return <svg {...p}><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3.5 8.5L12 13l8.5-4.5"/><path d="M12 13v8"/></svg>;
+    case "search": return <svg {...p}><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+    case "login": return <svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="15 17 20 12 15 7"/><line x1="20" y1="12" x2="9" y2="12"/></svg>;
+    case "logout": return <svg {...p}><path d="M15 21h4a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-4"/><polyline points="9 7 4 12 9 17"/><line x1="4" y1="12" x2="15" y2="12"/></svg>;
+    case "x": return <svg {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+    case "check-circle": return <svg {...p}><circle cx="12" cy="12" r="9"/><polyline points="8.5 12 11 14.5 15.5 9.5"/></svg>;
+    case "truck": return <svg {...p}><rect x="1" y="7" width="13" height="10" rx="1"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="6" cy="19" r="1.6"/><circle cx="17" cy="19" r="1.6"/></svg>;
+    case "home": return <svg {...p}><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h5v-6h2v6h5a1 1 0 0 0 1-1V10"/></svg>;
+    case "clipboard-list": return <svg {...p}><rect x="6" y="4" width="12" height="17" rx="1.5"/><rect x="9" y="2" width="6" height="3" rx="1"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="18" x2="13" y2="18"/></svg>;
+    case "package-check": return <svg {...p}><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3.5 8.5L12 13l8.5-4.5"/><path d="M12 13v8"/><circle cx="18" cy="6" r="4" fill="#141416" stroke="none"/><polyline points="16.3 6 17.5 7.2 19.7 4.8" stroke="#7CA982" strokeWidth="1.6"/></svg>;
+    case "alert-circle": return <svg {...p}><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="13"/><circle cx="12" cy="16.5" r="0.9" fill="currentColor" stroke="none"/></svg>;
+    case "loader": return <svg {...p} className={`${className} animate-spin`}><circle cx="12" cy="12" r="9" opacity="0.25"/><path d="M21 12a9 9 0 0 0-9-9"/></svg>;
+    case "clock": return <svg {...p}><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>;
+    case "map-pin": return <svg {...p}><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.3"/></svg>;
+    case "upload": return <svg {...p}><path d="M12 3v12"/><polyline points="7 8 12 3 17 8"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>;
+    case "copy": return <svg {...p}><rect x="9" y="9" width="12" height="12" rx="1.5"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>;
+    case "chevron-right": return <svg {...p}><polyline points="9 6 15 12 9 18"/></svg>;
+    case "arrow-left": return <svg {...p}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>;
+    default: return null;
+  }
+}
+
+// ============================================================
+// 3D visual elements
+// ============================================================
+function BikeLogoMark({ size = 40, animated = false }) {
+  const spokes = (cx) => [0, 60, 120, 180, 240, 300].map((deg) => {
+    const r1 = 5, r2 = 13, rad = (deg * Math.PI) / 180;
+    return <line key={deg} x1={cx + r1 * Math.cos(rad)} y1={52 + r1 * Math.sin(rad)} x2={cx + r2 * Math.cos(rad)} y2={52 + r2 * Math.sin(rad)} stroke="#E8571F" strokeWidth="1.6" opacity="0.7" />;
+  });
+  const mark = (
+    <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
+      <circle cx="60" cy="60" r="57" fill="#1C1C1E" stroke="#E8571F" strokeWidth="4.5" />
+      <circle cx="60" cy="60" r="49" fill="none" stroke="#E8571F" strokeWidth="1" opacity="0.3" />
+      {/* speed/motion lines */}
+      <g strokeLinecap="round">
+        <line x1="10" y1="42" x2="24" y2="42" stroke="#E8571F" strokeWidth="3" opacity="0.75" />
+        <line x1="6" y1="52" x2="22" y2="52" stroke="#E8571F" strokeWidth="3.5" opacity="0.9" />
+        <line x1="10" y1="62" x2="24" y2="62" stroke="#E8571F" strokeWidth="3" opacity="0.75" />
+      </g>
+      <svg x="8" y="30" width="104" height="62" viewBox="0 0 120 70">
+        <circle cx="22" cy="52" r="15" stroke="#F2F0EB" strokeWidth="4" fill="#0E0E10" />
+        <circle cx="22" cy="52" r="4.5" fill="#E8571F" />
+        {spokes(22)}
+        <circle cx="94" cy="52" r="15" stroke="#F2F0EB" strokeWidth="4" fill="#0E0E10" />
+        <circle cx="94" cy="52" r="4.5" fill="#E8571F" />
+        {spokes(94)}
+        <path d="M22,52 L46,38 L57,24 L72,20 L88,27 L94,52" stroke="#F2F0EB" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        <line x1="88" y1="27" x2="94" y2="52" stroke="#F2F0EB" strokeWidth="4.5" />
+        <path d="M55,23 L72,15 L91,25 L80,32 L60,31 Z" fill="#E8571F" />
+        <path d="M45,39 L58,31 L65,33 L53,41 Z" fill="#B8B9BD" />
+        <path d="M46,38 Q30,44 16,40" stroke="#E8571F" strokeWidth="3.5" fill="none" strokeLinecap="round" />
+        <line x1="88" y1="27" x2="99" y2="21" stroke="#F2F0EB" strokeWidth="3.5" strokeLinecap="round" />
+      </svg>
+    </svg>
+  );
+  if (!animated) return mark;
+  return <div className="bike-3d-wrap"><div className="bike-3d">{mark}</div></div>;
+}
+
+function TiltCard({ children, className = "" }) {
+  const [style, setStyle] = useState({});
+  function onMove(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    setStyle({ transform: `perspective(700px) rotateX(${(0.5 - py) * 14}deg) rotateY(${(px - 0.5) * 14}deg) translateZ(4px)`, boxShadow: "0 18px 30px -12px rgba(0,0,0,0.55)" });
+  }
+  function onLeave() { setStyle({ transform: "perspective(700px) rotateX(0deg) rotateY(0deg) translateZ(0px)", boxShadow: "none" }); }
+  return <div className={`tilt-card ${className}`} style={style} onMouseMove={onMove} onMouseLeave={onLeave}>{children}</div>;
+}
+
+function Badge({ children, tone = "default" }) {
+  const tones = { default: "bg-[#2A2A2E] text-[#B8B9BD]", live: "bg-[#E8571F]/15 text-[#E8571F]", pending: "bg-[#C4635A]/15 text-[#C4635A]" };
+  return <span className={`px-2 py-0.5 rounded text-xs font-mono uppercase tracking-wide ${tones[tone]}`}>{children}</span>;
+}
+function EmptyState({ icon, title, subtitle }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center text-[#8B8D92]">
+      <Icon name={icon} size={36} className="mb-3 opacity-60" />
+      <p className="font-display text-lg text-[#D8D6CE]">{title}</p>
+      {subtitle && <p className="text-sm mt-1 max-w-xs">{subtitle}</p>}
+    </div>
+  );
+}
+
+function OrderGauge({ status }) {
+  const idx = STATUSES.indexOf(status);
+  const pct = idx < 0 ? 0 : idx / (STATUSES.length - 1);
+  const angle = -90 + pct * 180;
+  return (
+    <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-6">
+      <div className="relative w-full max-w-xs mx-auto aspect-[2/1] overflow-hidden">
+        <svg viewBox="0 0 200 100" className="w-full h-full">
+          <path d="M 10 100 A 90 90 0 0 1 190 100" fill="none" stroke="#2A2A2E" strokeWidth="10" strokeLinecap="round" />
+          <path d="M 10 100 A 90 90 0 0 1 190 100" fill="none" stroke="#E8571F" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${pct * 282.7} 282.7`} style={{ transition: "stroke-dasharray 0.6s ease" }} />
+          <g style={{ transform: `rotate(${angle}deg)`, transformOrigin: "100px 100px", transition: "transform 0.6s ease" }}>
+            <line x1="100" y1="100" x2="100" y2="25" stroke="#F2F0EB" strokeWidth="3" strokeLinecap="round" />
+          </g>
+          <circle cx="100" cy="100" r="6" fill="#F2F0EB" />
+        </svg>
+      </div>
+      <div className="grid grid-cols-5 gap-1 mt-2">
+        {STATUSES.map((s, i) => {
+          const done = i <= idx;
+          return (
+            <div key={s} className="flex flex-col items-center text-center gap-1">
+              <Icon name={STATUS_ICONS[s]} size={15} className={done ? "text-[#E8571F]" : "text-[#4A4A4E]"} />
+              <span className={`text-[9px] font-mono uppercase tracking-wide leading-tight ${done ? "text-[#D8D6CE]" : "text-[#5A5A5E]"}`}>{s}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function WhatsAppButton() {
+  const href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent("Hi, I need help with a bike spare part order.")}`;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      className="fixed bottom-5 right-5 z-[999] flex items-center gap-2 bg-[#25D366] text-white pl-3 pr-4 py-3 rounded-full shadow-lg hover:scale-105 transition-transform wa-pulse"
+      title="Chat with us on WhatsApp">
+      <svg viewBox="0 0 32 32" width="24" height="24" fill="white" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16.02 3C9.4 3 4 8.4 4 15.02c0 2.24.62 4.34 1.7 6.14L4 29l8.02-1.66a12.9 12.9 0 0 0 4 .64c6.62 0 12.02-5.4 12.02-12.02C28.04 8.4 22.64 3 16.02 3zm0 21.8c-1.9 0-3.66-.5-5.2-1.4l-.37-.22-4.4.9.9-4.3-.24-.4a9.8 9.8 0 0 1-1.5-5.36c0-5.44 4.4-9.84 9.83-9.84 5.42 0 9.83 4.4 9.83 9.84 0 5.43-4.41 9.83-9.85 9.83zm5.4-7.35c-.3-.15-1.75-.86-2.02-.96-.27-.1-.47-.15-.66.15-.2.3-.76.96-.93 1.15-.17.2-.34.22-.63.08-.3-.15-1.24-.46-2.37-1.47-.87-.78-1.46-1.73-1.63-2.03-.17-.3-.02-.46.13-.6.13-.14.3-.34.44-.5.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.66-1.6-.9-2.2-.24-.57-.48-.5-.66-.5h-.56c-.2 0-.52.08-.79.38-.27.3-1.03 1-1.03 2.45s1.06 2.85 1.2 3.05c.15.2 2.1 3.2 5.08 4.5.71.3 1.26.49 1.7.63.71.22 1.36.2 1.87.12.57-.08 1.75-.71 2-1.4.24-.68.24-1.27.17-1.4-.07-.13-.27-.2-.57-.35z" />
+      </svg>
+      <span className="text-sm font-medium hidden sm:inline">WhatsApp</span>
+    </a>
+  );
+}
+
+function CategoryIcon({ category }) {
+  const c = (category || "").toLowerCase();
+  if (c.includes("brake")) {
+    return (
+      <svg viewBox="0 0 100 100" width="56" height="56">
+        <circle cx="50" cy="50" r="34" fill="none" stroke="#E8571F" strokeWidth="4" />
+        <circle cx="50" cy="50" r="34" fill="none" stroke="#4A4A4E" strokeWidth="1" strokeDasharray="3 4" />
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => {
+          const r1 = 10, r2 = 30, rad = (a * Math.PI) / 180;
+          return <line key={a} x1={50 + r1 * Math.cos(rad)} y1={50 + r1 * Math.sin(rad)} x2={50 + r2 * Math.cos(rad)} y2={50 + r2 * Math.sin(rad)} stroke="#8B8D92" strokeWidth="1.5" />;
+        })}
+        <circle cx="50" cy="50" r="8" fill="#1C1C1E" stroke="#F2F0EB" strokeWidth="2" />
+      </svg>
+    );
+  }
+  if (c.includes("trans") || c.includes("chain")) {
+    return <svg viewBox="0 0 100 60" width="72" height="44">{[10, 30, 50, 70, 90].map((x, i) => <ellipse key={x} cx={x} cy={i % 2 === 0 ? 25 : 35} rx="12" ry="8" fill="none" stroke="#E8571F" strokeWidth="4" />)}</svg>;
+  }
+  if (c.includes("engine")) {
+    return (
+      <svg viewBox="0 0 100 100" width="56" height="56">
+        <rect x="35" y="20" width="30" height="45" rx="4" fill="none" stroke="#E8571F" strokeWidth="4" />
+        <line x1="50" y1="20" x2="50" y2="10" stroke="#F2F0EB" strokeWidth="4" strokeLinecap="round" />
+        <circle cx="50" cy="10" r="5" fill="#F2F0EB" />
+        <line x1="35" y1="65" x2="65" y2="65" stroke="#8B8D92" strokeWidth="3" />
+        <line x1="30" y1="75" x2="70" y2="75" stroke="#8B8D92" strokeWidth="3" />
+      </svg>
+    );
+  }
+  if (c.includes("suspen")) {
+    return (
+      <svg viewBox="0 0 100 100" width="50" height="78">
+        <path d="M50,10 L58,20 L42,28 L58,36 L42,44 L58,52 L42,60 L50,70" fill="none" stroke="#E8571F" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="42" y="70" width="16" height="18" rx="3" fill="none" stroke="#F2F0EB" strokeWidth="3" />
+      </svg>
+    );
+  }
+  if (c.includes("body")) {
+    return (
+      <svg viewBox="0 0 100 60" width="72" height="44">
+        <rect x="10" y="24" width="80" height="12" rx="6" fill="none" stroke="#E8571F" strokeWidth="4" />
+        <rect x="10" y="24" width="20" height="12" rx="6" fill="#F2F0EB" opacity="0.15" />
+      </svg>
+    );
+  }
+  return <svg viewBox="0 0 100 100" width="56" height="56"><circle cx="50" cy="50" r="30" fill="none" stroke="#E8571F" strokeWidth="4" /><circle cx="50" cy="50" r="8" fill="#E8571F" /></svg>;
+}
+function PartVisual({ image, category, alt = "" }) {
+  if (image) return <img src={image} alt={alt} className="w-full h-full object-cover" />;
+  return <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#26262A] to-[#17171A]"><CategoryIcon category={category} /></div>;
+}
+
+// Small brand-colored badge next to each courier's name so the two are visually distinct.
+function CourierLogo({ name }) {
+  const n = (name || "").toLowerCase();
+  if (n.includes("delhivery")) {
+    return <span className="w-7 h-7 rounded-md bg-[#D6001C] text-white flex items-center justify-center font-bold text-xs shrink-0">D</span>;
+  }
+  if (n.includes("shiprocket")) {
+    return <span className="w-7 h-7 rounded-md bg-[#1F3E8C] text-white flex items-center justify-center font-bold text-xs shrink-0">S</span>;
+  }
+  return <Icon name="truck" size={16} className="text-[#8B8D92]" />;
+}
+
+// ============================================================
+// Main App
+// ============================================================
+function App() {
+  const [view, setView] = useState("shop");
+  const [products, setProducts] = useState(null);
+  const [orders, setOrders] = useState([]);
+  const [cart, setCart] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [lastOrderId, setLastOrderId] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [bump, setBump] = useState(false);
+
+  const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); }, []);
+
+  useEffect(() => {
+    let p = loadProducts();
+    if (!p) { p = SEED_PRODUCTS; saveProducts(p); }
+    const o = loadOrders();
+    setProducts(p); setOrders(o); setLoading(false);
+  }, []);
+
+  const addToCart = (id) => { setCart((c) => ({ ...c, [id]: (c[id] || 0) + 1 })); setBump(true); setTimeout(() => setBump(false), 350); };
+  const decFromCart = (id) => setCart((c) => { const n = { ...c }; if (n[id] <= 1) delete n[id]; else n[id] -= 1; return n; });
+  const removeFromCart = (id) => setCart((c) => { const n = { ...c }; delete n[id]; return n; });
+
+  const cartItems = products ? Object.entries(cart).map(([id, qty]) => { const prod = products.find((p) => p.id === id); return prod ? { ...prod, qty } : null; }).filter(Boolean) : [];
+  const cartTotal = cartItems.reduce((sum, i) => sum + i.price * i.qty, 0);
+  const cartCount = cartItems.reduce((sum, i) => sum + i.qty, 0);
+
+  // Step 1: customer has filled the checkout form and needs to pay. We create the
+  // order right away with paymentStatus "Pending" so that if they abandon the QR
+  // screen without paying, Track Order still finds the order and shows it as Pending —
+  // it only flips to Paid once they confirm on the scanner screen.
+  function createPendingOrder({ name, phone, altPhone, houseNo, street, landmark, pincode, address, city, state, courier, courierEta, shippingCharge }) {
+    const order = {
+      id: "ORD" + uid("").replace(/[^0-9]/g, "").slice(-8),
+      items: cartItems.map(({ id, name, price, qty, sku, deliveryTime }) => ({ id, name, price, qty, sku, deliveryTime })),
+      subtotal: cartTotal, shippingCharge, total: cartTotal + shippingCharge,
+      courierPartner: courier, courierEta,
+      customerName: name, phone, altPhone, houseNo, street, landmark, pincode, address, city, state,
+      pickupAddress: SHOP_ADDRESS, paymentMethod: "UPI",
+      paymentStatus: "Pending", trackingNumber: "",
+      orderStatus: "Placed", createdAt: new Date().toISOString(),
+    };
+    const nextOrders = [order, ...orders];
+    setOrders(nextOrders); saveOrders(nextOrders);
+    setLastOrderId(order.id); setView("payment");
+    return order;
+  }
+
+  // Step 2: Razorpay's handler fires this after a successful payment in the popup.
+  // Stock is deducted only now, once the order is actually confirmed as paid.
+  function confirmPayment(orderId, razorpayPaymentId) {
+    const nextOrders = orders.map((o) => o.id === orderId ? { ...o, paymentStatus: "Paid", razorpayPaymentId: razorpayPaymentId || "" } : o);
+    setOrders(nextOrders); saveOrders(nextOrders);
+    const paidOrder = nextOrders.find((o) => o.id === orderId);
+    if (paidOrder) {
+      const nextProducts = products.map((p) => { const item = paidOrder.items.find((i) => i.id === p.id); return item ? { ...p, stock: Math.max(0, p.stock - item.qty) } : p; });
+      setProducts(nextProducts); saveProducts(nextProducts);
+    }
+    setCart({}); setView("track"); showToast("Payment received — order placed!");
+  }
+
+  // If the customer backs out of the QR screen without paying, drop the unpaid
+  // order so it doesn't sit around forever, and return them to their cart.
+  function cancelPendingOrder(orderId) {
+    const nextOrders = orders.filter((o) => o.id !== orderId);
+    setOrders(nextOrders); saveOrders(nextOrders);
+    setView("cart");
+  }
+
+  if (loading) return <div className="min-h-screen bg-[#141416] flex items-center justify-center"><Icon name="loader" size={32} className="text-[#E8571F]" /></div>;
+
+  return (
+    <div className="min-h-screen bg-[#141416] text-[#F2F0EB] font-body">
+      <TopBar view={view} setView={setView} cartCount={cartCount} cartTotal={cartTotal} bump={bump} />
+
+      {cartCount > 0 && view !== "cart" && view !== "payment" && (
+        <button onClick={() => setView("cart")} className="sticky top-[57px] z-30 w-full bg-[#E8571F] text-[#141416] text-sm font-medium py-2.5 px-4 flex items-center justify-center gap-2 hover:bg-[#D14A15] transition-colors">
+          <Icon name="cart" size={15} />
+          <span className="bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">{cartCount}</span>
+          item{cartCount > 1 ? "s" : ""} added · {inr(cartTotal)} · View Cart
+          <Icon name="chevron-right" size={15} />
+        </button>
+      )}
+
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-[#1C1C1E] border border-[#E8571F]/40 text-[#F2F0EB] px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 text-sm">
+          <Icon name="check-circle" size={16} className="text-[#E8571F]" /> {toast}
+        </div>
+      )}
+
+      {view === "shop" && <ShopView products={products} onAdd={addToCart} />}
+      {view === "cart" && <CartPage items={cartItems} subtotal={cartTotal} onInc={addToCart} onDec={decFromCart} onRemove={removeFromCart} onBackToShop={() => setView("shop")} onCreatePendingOrder={createPendingOrder} />}
+      {view === "payment" && <PaymentScannerView order={orders.find((o) => o.id === lastOrderId)} onConfirm={confirmPayment} onCancel={cancelPendingOrder} />}
+      {view === "track" && <TrackView orders={orders} highlightId={lastOrderId} />}
+      {view === "admin" && <AdminView products={products} setProducts={(p) => { setProducts(p); saveProducts(p); }} orders={orders} setOrders={(o) => { setOrders(o); saveOrders(o); }} showToast={showToast} />}
+
+      <WhatsAppButton />
+
+      <footer className="border-t border-[#2A2A2E] mt-16 py-8 px-4">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-[#8B8D92]">
+          <div className="flex items-center gap-2">
+            <BikeLogoMark size={28} />
+            <span className="font-display font-bold text-[#F2F0EB]">BIKEMODZ<span className="text-[#E8571F]">HUB</span></span>
+          </div>
+          <p className="text-xs">Genuine spare parts · {SHOP_CITY}, {SHOP_STATE} · Shipped across India</p>
+          <p className="text-xs">© {new Date().getFullYear()} BikeModzHub. All rights reserved.</p>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function TopBar({ view, setView, cartCount, cartTotal, bump }) {
+  const NavBtn = ({ id, label, icon }) => (
+    <button onClick={() => setView(id)} title={label} className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${view === id ? "bg-[#E8571F] text-[#141416]" : "text-[#B8B9BD] hover:text-[#F2F0EB] hover:bg-[#2A2A2E]"}`}>
+      <Icon name={icon} size={15} /> <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+  return (
+    <header className="sticky top-0 z-40 bg-[#141416]/95 backdrop-blur border-b border-[#2A2A2E]">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <BikeLogoMark size={30} />
+          <span className="font-display font-bold text-base sm:text-xl tracking-wide truncate">BIKEMODZ<span className="text-[#E8571F]">HUB</span></span>
+        </div>
+        <nav className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <NavBtn id="shop" label="Shop" icon="package" />
+          <NavBtn id="track" label="Track Order" icon="search" />
+          <NavBtn id="admin" label="Admin" icon="login" />
+          <button onClick={() => setView("cart")} className="relative ml-1 flex items-center gap-1.5 sm:gap-2 pl-1.5 sm:pl-2 pr-2 sm:pr-3 py-2 rounded-md text-[#B8B9BD] hover:text-[#F2F0EB] hover:bg-[#2A2A2E]">
+            <span className="relative">
+              <Icon name="cart" size={18} />
+              {cartCount > 0 && <span className={`absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center ${bump ? "cart-bump" : ""}`}>{cartCount}</span>}
+            </span>
+            {cartCount > 0 && <span className="hidden sm:inline text-sm font-medium text-[#F2F0EB]">{inr(cartTotal)}</span>}
+          </button>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+function ShopView({ products, onAdd }) {
+  const [query, setQuery] = useState("");
+  const filtered = products.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()) || p.sku.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="flex flex-col sm:flex-row items-center gap-6 mb-10 bg-[#1C1C1E] border border-[#2A2A2E] rounded-2xl p-6 sm:p-8 overflow-hidden">
+        <BikeLogoMark size={150} animated />
+        <div className="text-center sm:text-left">
+          <p className="font-mono text-xs text-[#E8571F] tracking-widest mb-2">GENUINE · FAST DISPATCH · PAN INDIA</p>
+          <h1 className="font-display text-4xl sm:text-5xl font-bold leading-none mb-2">Spare Parts, <span className="text-[#E8571F]">Built To Last</span></h1>
+          <p className="text-[#8B8D92] text-sm max-w-md">Har part ka SKU, stock, price aur delivery time ek jagah. Order karo, track karo, delivery tak.</p>
+        </div>
+      </div>
+      <div className="mb-6"><h2 className="font-display text-2xl font-bold">Catalog</h2><p className="text-[#8B8D92] text-sm mt-1">Browse by name or SKU.</p></div>
+      <div className="relative mb-6 max-w-sm">
+        <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A5E]" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search parts or SKU..." className="w-full bg-[#1C1C1E] border border-[#2A2A2E] rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
+      </div>
+      {filtered.length === 0 ? <EmptyState icon="package" title="No parts found" subtitle="Try a different search term." /> : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((p) => (
+            <TiltCard key={p.id} className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4 flex flex-col">
+              <div className="w-full aspect-[4/3] bg-[#2A2A2E] rounded-lg mb-3 overflow-hidden"><PartVisual image={p.image} category={p.category} alt={p.name} /></div>
+              <div className="flex items-center justify-between mb-1"><Badge>{p.sku}</Badge><span className="text-xs text-[#5A5A5E]">{p.category}</span></div>
+              <h3 className="font-medium text-sm leading-snug mb-1 flex-1">{p.name}</h3>
+              {p.deliveryTime && <p className="text-xs text-[#8B8D92] flex items-center gap-1 mb-2"><Icon name="clock" size={12} /> Ships in {p.deliveryTime}</p>}
+              <div className="flex items-center justify-between mt-1">
+                <span className="font-display text-lg font-bold">{inr(p.price)}</span>
+                <span className={`text-xs font-mono ${p.stock > 0 ? "text-[#7CA982]" : "text-[#C4635A]"}`}>{p.stock > 0 ? `${p.stock} in stock` : "Out of stock"}</span>
+              </div>
+              <button disabled={p.stock <= 0} onClick={() => onAdd(p.id)} className="mt-3 w-full bg-[#E8571F] disabled:bg-[#2A2A2E] disabled:text-[#5A5A5E] text-[#141416] font-medium text-sm py-2 rounded-lg hover:bg-[#D14A15] transition-colors flex items-center justify-center gap-1.5">
+                <Icon name="plus" size={15} /> Add to Cart
+              </button>
+            </TiltCard>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CartPage({ items, subtotal, onInc, onDec, onRemove, onBackToShop, onCreatePendingOrder }) {
+  const [step, setStep] = useState("cart");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState(SHOP_STATE);
+  const [pincode, setPincode] = useState("");
+  const [selectedCourier, setSelectedCourier] = useState(null);
+
+  // Our own estimated price — not the live courier API — so what the customer
+  // sees is fixed and predictable, and matches by city OR pincode.
+  const courierOptions = getShippingOptions(city, state, pincode);
+
+  if (items.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16">
+        <EmptyState icon="cart" title="Cart is empty" subtitle="Add some parts to get started." />
+        <div className="text-center"><button onClick={onBackToShop} className="mt-2 text-sm text-[#E8571F] hover:underline">← Back to shop</button></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-8">
+      <button onClick={onBackToShop} className="flex items-center gap-1.5 text-sm text-[#8B8D92] hover:text-[#F2F0EB] mb-4"><Icon name="arrow-left" size={14} /> Continue shopping</button>
+      <h1 className="font-display text-3xl font-bold mb-6">Your Cart</h1>
+
+      <div className="space-y-3 mb-6">
+        {items.map((item) => (
+          <div key={item.id} className="flex gap-3 bg-[#1C1C1E] border border-[#2A2A2E] rounded-lg p-3">
+            <div className="w-16 h-16 bg-[#2A2A2E] rounded-lg overflow-hidden shrink-0"><PartVisual image={item.image} category={item.category} alt={item.name} /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{item.name}</p>
+              <p className="text-xs text-[#5A5A5E] font-mono">{item.sku}</p>
+              {item.deliveryTime && <p className="text-xs text-[#8B8D92] flex items-center gap-1 mt-0.5"><Icon name="clock" size={11} /> {item.deliveryTime}</p>}
+              <div className="flex items-center gap-2 mt-2">
+                <button onClick={() => onDec(item.id)} className="w-6 h-6 rounded bg-[#2A2A2E] flex items-center justify-center hover:bg-[#3A3A3E]"><Icon name="minus" size={12} /></button>
+                <span className="text-sm w-5 text-center">{item.qty}</span>
+                <button onClick={() => onInc(item.id)} className="w-6 h-6 rounded bg-[#2A2A2E] flex items-center justify-center hover:bg-[#3A3A3E]"><Icon name="plus" size={12} /></button>
+              </div>
+            </div>
+            <div className="flex flex-col items-end justify-between">
+              <span className="font-display font-bold">{inr(item.price * item.qty)}</span>
+              <button onClick={() => onRemove(item.id)} className="text-[#5A5A5E] hover:text-[#C4635A]"><Icon name="trash" size={14} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4 mb-6">
+        <h2 className="font-display text-lg font-bold mb-1 flex items-center gap-2"><Icon name="map-pin" size={17} className="text-[#E8571F]" /> Delivery Location & Shipping</h2>
+        <p className="text-xs text-[#5A5A5E] mb-3">Enter your city or pincode — every courier below picks up from our store once packed and delivers straight to your door.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <div><label className="text-xs text-[#8B8D92] block mb-1">City</label>
+            <input value={city} onChange={(e) => { setCity(e.target.value); setSelectedCourier(null); }} placeholder="e.g. Jaipur" className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" /></div>
+          <div><label className="text-xs text-[#8B8D92] block mb-1">State</label>
+            <select value={state} onChange={(e) => { setState(e.target.value); setSelectedCourier(null); }} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]">
+              {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select></div>
+          <div><label className="text-xs text-[#8B8D92] block mb-1">Pincode</label>
+            <input value={pincode} onChange={(e) => { setPincode(e.target.value.replace(/\D/g, "").slice(0, 6)); setSelectedCourier(null); }} placeholder="302001" className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" /></div>
+        </div>
+        <div className="space-y-2">
+          {courierOptions.map((c) => (
+            <button key={c.id} onClick={() => setSelectedCourier(c)} className={`w-full flex items-center justify-between p-3 rounded-lg border text-left ${selectedCourier?.id === c.id ? "border-[#E8571F] bg-[#E8571F]/10" : "border-[#2A2A2E]"}`}>
+              <div className="flex items-center gap-2.5">
+                <CourierLogo name={c.name} />
+                <div><p className="text-sm font-medium">{c.name}</p><p className="text-xs text-[#5A5A5E]">Estimated {c.eta}</p></div>
+              </div>
+              <span className="font-display font-bold text-sm">{inr(c.price)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4 mb-6">
+        <div className="flex items-center justify-between text-sm mb-1"><span className="text-[#8B8D92]">Subtotal</span><span>{inr(subtotal)}</span></div>
+        <div className="flex items-center justify-between text-sm mb-2"><span className="text-[#8B8D92]">Shipping ({selectedCourier ? selectedCourier.name : "select above"})</span><span>{selectedCourier ? inr(selectedCourier.price) : "—"}</span></div>
+        <div className="flex items-center justify-between font-display text-xl font-bold pt-2 border-t border-[#2A2A2E]"><span>Total</span><span>{selectedCourier ? inr(subtotal + selectedCourier.price) : "—"}</span></div>
+      </div>
+
+      {step === "cart" && (
+        <button disabled={!selectedCourier || !city.trim()} onClick={() => setStep("checkout")} className="w-full bg-[#E8571F] disabled:bg-[#2A2A2E] disabled:text-[#5A5A5E] text-[#141416] font-medium py-3 rounded-lg hover:bg-[#D14A15] flex items-center justify-center gap-1.5">
+          Proceed to Checkout <Icon name="chevron-right" size={16} />
+        </button>
+      )}
+      {step === "checkout" && (
+        <CheckoutForm subtotal={subtotal} shippingCharge={selectedCourier.price} courier={selectedCourier.name} city={city} state={state} pincode={pincode} onBack={() => setStep("cart")}
+          onPlace={(data) => onCreatePendingOrder({ ...data, city, state, courier: selectedCourier.name, courierEta: selectedCourier.eta, shippingCharge: selectedCourier.price })} />
+      )}
+    </div>
+  );
+}
+
+function CheckoutForm({ subtotal, shippingCharge, courier, city, state, pincode, onBack, onPlace }) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [altPhone, setAltPhone] = useState("");
+  const [houseNo, setHouseNo] = useState("");
+  const [street, setStreet] = useState("");
+  const [landmark, setLandmark] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const valid = name.trim() && /^[0-9]{10}$/.test(phone.trim()) && houseNo.trim() && street.trim() && /^[0-9]{6}$/.test(pincode.trim());
+
+  function handlePlace() {
+    if (!valid) { setError("Please fill Name, Phone, House/Flat No., Street and a valid 6-digit Pincode."); return; }
+    setError(""); setSubmitting(true);
+    const fullAddress = `${houseNo.trim()}, ${street.trim()}${landmark.trim() ? ", Near " + landmark.trim() : ""}, ${city}, ${state} - ${pincode.trim()}`;
+    onPlace({
+      name: name.trim(), phone: phone.trim(), altPhone: altPhone.trim(),
+      houseNo: houseNo.trim(), street: street.trim(), landmark: landmark.trim(), pincode: pincode.trim(),
+      address: fullAddress,
+    });
+  }
+
+  return (
+    <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-[#8B8D92] hover:text-[#F2F0EB] mb-3"><Icon name="arrow-left" size={12} /> Back to shipping</button>
+      <h2 className="font-display text-xl font-bold mb-3">Checkout</h2>
+      <p className="text-xs text-[#5A5A5E] mb-3">Delivering to {city}, {state} via {courier}</p>
+      <div className="space-y-3">
+        <div><label className="text-xs text-[#8B8D92] block mb-1">Full Name *</label><input value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="Rahul Sharma" /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div><label className="text-xs text-[#8B8D92] block mb-1">Phone Number *</label><input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="9876543210" /></div>
+          <div><label className="text-xs text-[#8B8D92] block mb-1">Alternate Phone</label><input value={altPhone} onChange={(e) => setAltPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="Optional" /></div>
+        </div>
+        <p className="text-[10px] uppercase tracking-wide text-[#5A5A5E] font-mono pt-1">Delivery Address — step by step, so the courier can find you</p>
+        <div><label className="text-xs text-[#8B8D92] block mb-1">House / Flat No. & Building *</label><input value={houseNo} onChange={(e) => setHouseNo(e.target.value)} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="e.g. B-204, Shree Apartments" /></div>
+        <div><label className="text-xs text-[#8B8D92] block mb-1">Street / Area / Locality *</label><input value={street} onChange={(e) => setStreet(e.target.value)} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="e.g. MI Road" /></div>
+        <div><label className="text-xs text-[#8B8D92] block mb-1">Landmark</label><input value={landmark} onChange={(e) => setLandmark(e.target.value)} className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" placeholder="Optional, e.g. Near XYZ" /></div>
+        <p className="text-xs text-[#5A5A5E]">City: <span className="text-[#B8B9BD]">{city}</span> · State: <span className="text-[#B8B9BD]">{state}</span> · Pincode: <span className="text-[#B8B9BD]">{pincode}</span> (chosen on the previous step)</p>
+        <div className="flex items-center gap-2 bg-[#141416] border border-[#E8571F]/30 rounded-lg px-3 py-2.5">
+          <Icon name="check-circle" size={15} className="text-[#E8571F]" />
+          <span className="text-sm text-[#F2F0EB]">Payment: <strong>Scan & Pay (UPI QR Code)</strong> — orders are prepaid only</span>
+        </div>
+        {error && <p className="text-xs text-[#C4635A] flex items-center gap-1"><Icon name="alert-circle" size={13} /> {error}</p>}
+        <div className="pt-2 border-t border-[#2A2A2E] space-y-1 text-sm">
+          <div className="flex justify-between text-[#8B8D92]"><span>Item Cost</span><span>{inr(subtotal)}</span></div>
+          <div className="flex justify-between text-[#8B8D92]"><span>Delivery Charge</span><span>{inr(shippingCharge)}</span></div>
+          <div className="flex justify-between font-display text-lg font-bold"><span>Total</span><span>{inr(subtotal + shippingCharge)}</span></div>
+        </div>
+        <button onClick={handlePlace} disabled={submitting} className="w-full bg-[#E8571F] disabled:opacity-60 text-[#141416] font-medium py-2.5 rounded-lg hover:bg-[#D14A15] flex items-center justify-center gap-2">
+          {submitting ? <Icon name="loader" size={16} /> : null}Continue to Payment
+        </button>
+      </div>
+    </div>
+
+  );
+}
+
+// Generates a real scannable UPI QR code (upi://pay deep link) for the order total.
+// It will work with any UPI app (GPay/PhonePe/Paytm/BHIM) as long as UPI_ID above is
+// a genuine UPI ID — replace the placeholder before going live.
+function PaymentScannerView({ order, onConfirm, onCancel }) {
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState("");
+
+  if (!order) return <EmptyState icon="alert-circle" title="No order to pay for" subtitle="Please go back to your cart and check out again." />;
+
+  // Opens Razorpay's own hosted Checkout popup — inside it the customer can pay by
+  // scanning a UPI QR code, or via UPI intent / card / netbanking / wallet, whichever
+  // they prefer. On success we mark the order Paid and show the tracking number.
+  // On failure or if they close the popup, nothing changes — the order stays Pending
+  // and they land right back on this same screen to try again.
+  function openRazorpay() {
+    if (!window.Razorpay) { setPayError("Payment gateway didn't load. Check your connection and refresh."); return; }
+    setPayError(""); setPaying(true);
+    const rzp = new window.Razorpay({
+      key: RAZORPAY_KEY_ID,
+      amount: Math.round(order.total * 100), // paise
+      currency: "INR",
+      name: "BikeModzHub",
+      description: `Order ${order.id}`,
+      prefill: { name: order.customerName, contact: order.phone },
+      notes: { order_id: order.id },
+      theme: { color: "#E8571F" },
+      handler: function (response) {
+        setPaying(false);
+        onConfirm(order.id, response.razorpay_payment_id);
+      },
+      modal: {
+        ondismiss: function () { setPaying(false); },
+      },
+    });
+    rzp.on("payment.failed", function () {
+      setPaying(false);
+      setPayError("Payment failed. You can try again below.");
+    });
+    rzp.open();
+  }
+
+  return (
+    <div className="max-w-md mx-auto px-4 py-10">
+      <h1 className="font-display text-3xl font-bold mb-1">Complete Payment</h1>
+      <p className="text-[#8B8D92] text-sm mb-6">Order <span className="font-mono text-[#E8571F]">{order.id}</span> · pay securely to confirm your order.</p>
+      <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-6 flex flex-col items-center">
+        <div className="w-full flex flex-col items-center py-6 mb-2">
+          <Icon name="package" size={40} className="text-[#E8571F] mb-3" />
+          <p className="font-display text-4xl font-bold mb-1">{inr(order.total)}</p>
+          <p className="text-xs text-[#8B8D92]">Scan UPI QR, or pay by card / netbanking / wallet in the next step</p>
+        </div>
+        <div className="w-full space-y-1 text-sm border-t border-[#2A2A2E] pt-3 mb-4">
+          <div className="flex justify-between text-[#8B8D92]"><span>Item Cost</span><span>{inr(order.subtotal)}</span></div>
+          <div className="flex justify-between text-[#8B8D92]"><span>Delivery Charge ({order.courierPartner})</span><span>{inr(order.shippingCharge)}</span></div>
+        </div>
+        {payError && <p className="text-xs text-[#C4635A] flex items-center gap-1 mb-3"><Icon name="alert-circle" size={13} /> {payError}</p>}
+        <button onClick={openRazorpay} disabled={paying} className="w-full bg-[#E8571F] disabled:opacity-60 text-[#141416] font-medium py-2.5 rounded-lg hover:bg-[#D14A15] flex items-center justify-center gap-2 mb-2">
+          {paying ? <Icon name="loader" size={16} /> : <Icon name="check-circle" size={16} />} Pay {inr(order.total)} Now
+        </button>
+        <button onClick={() => onCancel(order.id)} className="text-xs text-[#8B8D92] hover:text-[#F2F0EB]">Cancel and go back to cart</button>
+      </div>
+    </div>
+  );
+}
+
+function TrackView({ orders, highlightId }) {
+  const [query, setQuery] = useState(highlightId || "");
+  const [found, setFound] = useState(null);
+  const [searched, setSearched] = useState(false);
+  const [liveTracking, setLiveTracking] = useState(null); // { status, location, updatedAt } from shipping-backend, if deployed
+  const [liveTrackingError, setLiveTrackingError] = useState(false);
+
+  useEffect(() => { if (highlightId) { setFound(orders.find((o) => o.id === highlightId) || null); setSearched(true); } }, [highlightId, orders]);
+
+  // Once handed to the courier and an AWB is on file, try the shipping-backend for the
+  // real live Delhivery status. If the backend isn't deployed/reachable, fail quietly —
+  // the courier's own tracking page link (rendered below) still works either way.
+  useEffect(() => {
+    setLiveTracking(null); setLiveTrackingError(false);
+    if (!found?.trackingNumber || !["Picked Up", "Out for Delivery", "Delivered"].includes(found.orderStatus)) return;
+    if (!SHIPPING_BACKEND_URL || SHIPPING_BACKEND_URL.includes("localhost")) return;
+    fetch(`${SHIPPING_BACKEND_URL}/api/track/${encodeURIComponent(found.trackingNumber)}`)
+      .then((r) => { if (!r.ok) throw new Error("bad response"); return r.json(); })
+      .then(setLiveTracking)
+      .catch(() => setLiveTrackingError(true));
+  }, [found]);
+
+  function handleSearch() {
+    const q = query.trim().toLowerCase();
+    setFound(orders.find((o) => o.id.toLowerCase() === q || o.phone === q.replace(/\D/g, "")) || null);
+    setSearched(true);
+  }
+
+  return (
+    <div className="max-w-lg mx-auto px-4 py-10">
+      <h1 className="font-display text-3xl font-bold mb-1">Track Your Order</h1>
+      <p className="text-[#8B8D92] text-sm mb-6">Enter your Order ID or phone number.</p>
+      <div className="flex gap-2 mb-6">
+        <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} placeholder="e.g. ORD12345678 or 9876543210" className="flex-1 bg-[#1C1C1E] border border-[#2A2A2E] rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#E8571F]" />
+        <button onClick={handleSearch} className="bg-[#E8571F] text-[#141416] font-medium px-4 rounded-lg hover:bg-[#D14A15]"><Icon name="search" size={16} /></button>
+      </div>
+      {searched && !found && <EmptyState icon="alert-circle" title="No order found" subtitle="Double-check the Order ID or phone number." />}
+      {found && found.paymentStatus === "Pending" && (
+        <div className="space-y-4">
+          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-1">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-[#8B8D92] font-mono">Order</p>
+                <span className="font-mono text-lg font-bold text-[#E8571F]">{found.id}</span>
+              </div>
+              <Badge tone="pending">Payment Pending</Badge>
+            </div>
+            <p className="text-xs text-[#8B8D92]">Placed on {new Date(found.createdAt).toLocaleString("en-IN")}</p>
+            <div className="mt-3 bg-[#C4635A]/10 border border-[#C4635A]/30 rounded-lg px-3 py-2 flex items-center gap-2">
+              <Icon name="alert-circle" size={15} className="text-[#C4635A]" />
+              <span className="text-sm text-[#F2F0EB]">Payment not completed yet. This order won't be packed or shipped until payment is done.</span>
+            </div>
+          </div>
+          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
+            <h3 className="text-sm font-medium mb-2">Items</h3>
+            {found.items.map((i) => <div key={i.id} className="flex justify-between text-sm py-1 text-[#B8B9BD]"><span>{i.name} × {i.qty}</span><span>{inr(i.price * i.qty)}</span></div>)}
+            <div className="flex justify-between text-sm pt-2 mt-2 border-t border-[#2A2A2E]"><span>Item Cost</span><span>{inr(found.subtotal || 0)}</span></div>
+            <div className="flex justify-between text-sm pt-1"><span>Delivery Charge</span><span>{inr(found.shippingCharge || 0)}</span></div>
+            <div className="flex justify-between text-sm pt-1 font-medium"><span>Total</span><span>{inr(found.total)}</span></div>
+          </div>
+        </div>
+      )}
+      {found && found.paymentStatus !== "Pending" && (
+        <div className="space-y-4">
+          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-1">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-[#8B8D92] font-mono">Tracking Number</p>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-lg font-bold text-[#E8571F]">{found.id}</span>
+                  <button onClick={() => navigator.clipboard?.writeText(found.id)} title="Copy tracking number" className="text-[#8B8D92] hover:text-[#F2F0EB]"><Icon name="copy" size={14} /></button>
+                </div>
+              </div>
+              <Badge tone="live">{found.orderStatus}</Badge>
+            </div>
+            <p className="text-xs text-[#8B8D92]">Placed on {new Date(found.createdAt).toLocaleString("en-IN")}</p>
+            {found.courierPartner && <p className="text-xs text-[#8B8D92] mt-1 flex items-center gap-1"><Icon name="truck" size={12} /> Via {found.courierPartner}</p>}
+            <div className="mt-3 bg-[#E8571F]/10 border border-[#E8571F]/30 rounded-lg px-3 py-2 flex items-center gap-2">
+              <Icon name="clock" size={15} className="text-[#E8571F]" />
+              <span className="text-sm text-[#F2F0EB]">Expected delivery: <strong>{estimateDeliveryWindow(found)}</strong></span>
+            </div>
+            {["Picked Up", "Out for Delivery", "Delivered"].includes(found.orderStatus) && found.trackingNumber && liveTracking && (
+              <div className="mt-2 bg-[#1F3E2E]/40 border border-[#7CA982]/30 rounded-lg px-3 py-2">
+                <p className="text-xs text-[#7CA982] font-mono uppercase tracking-wide mb-0.5">Live from {found.courierPartner}</p>
+                <p className="text-sm text-[#F2F0EB]">{liveTracking.status}{liveTracking.location ? ` · ${liveTracking.location}` : ""}</p>
+                {liveTracking.updatedAt && <p className="text-[10px] text-[#5A5A5E] mt-0.5">Updated {new Date(liveTracking.updatedAt).toLocaleString("en-IN")}</p>}
+              </div>
+            )}
+            {["Picked Up", "Out for Delivery", "Delivered"].includes(found.orderStatus) && !liveTracking && courierTrackingUrl(found.courierPartner, found.trackingNumber) && (
+              <a href={courierTrackingUrl(found.courierPartner, found.trackingNumber)} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center justify-center gap-1.5 bg-[#2A2A2E] hover:bg-[#3A3A3E] text-[#F2F0EB] text-sm font-medium py-2 rounded-lg">
+                <Icon name="truck" size={14} /> Live status on {found.courierPartner}'s site
+              </a>
+            )}
+          </div>
+          <OrderGauge status={found.orderStatus} />
+          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4">
+            <h3 className="text-sm font-medium mb-2">Items</h3>
+            {found.items.map((i) => <div key={i.id} className="flex justify-between text-sm py-1 text-[#B8B9BD]"><span>{i.name} × {i.qty}{i.deliveryTime ? ` (${i.deliveryTime})` : ""}</span><span>{inr(i.price * i.qty)}</span></div>)}
+            <div className="flex justify-between text-sm pt-2 mt-2 border-t border-[#2A2A2E]"><span>Item Cost</span><span>{inr(found.subtotal || 0)}</span></div>
+            <div className="flex justify-between text-sm pt-1"><span>Delivery Charge</span><span>{inr(found.shippingCharge || 0)}</span></div>
+            <div className="flex justify-between text-sm pt-1 font-medium"><span>Total</span><span>{inr(found.total)}</span></div>
+          </div>
+          <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4 text-sm text-[#B8B9BD] space-y-1.5">
+            <h3 className="text-xs uppercase tracking-wide text-[#8B8D92] font-mono mb-1">Delivery Contact & Address</h3>
+            <p><span className="text-[#8B8D92]">Name:</span> {found.customerName}</p>
+            <p><span className="text-[#8B8D92]">Phone:</span> {found.phone}{found.altPhone ? ` (Alt: ${found.altPhone})` : ""}</p>
+            {found.houseNo ? (
+              <>
+                <p><span className="text-[#8B8D92]">House/Building:</span> {found.houseNo}</p>
+                <p><span className="text-[#8B8D92]">Street/Area:</span> {found.street}</p>
+                {found.landmark && <p><span className="text-[#8B8D92]">Landmark:</span> {found.landmark}</p>}
+                <p><span className="text-[#8B8D92]">City/State:</span> {found.city}, {found.state} - {found.pincode}</p>
+              </>
+            ) : (
+              <p><span className="text-[#8B8D92]">Address:</span> {found.address}, {found.city}, {found.state}</p>
+            )}
+            <p className="pt-1"><span className="text-[#8B8D92]">Payment:</span> {found.paymentMethod} — {found.paymentStatus}</p>
+            {STATUSES.indexOf(found.orderStatus) >= 1 && (
+              <p className="pt-2 border-t border-[#2A2A2E] mt-2 text-xs"><span className="text-[#8B8D92]">Picked up by courier from:</span> {found.pickupAddress || SHOP_ADDRESS}</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminView({ products, setProducts, orders, setOrders, showToast }) {
+  const [authed, setAuthed] = useState(false);
+  const [pw, setPw] = useState("");
+  const [pwError, setPwError] = useState("");
+  const [tab, setTab] = useState("orders");
+
+  if (!authed) {
+    return (
+      <div className="max-w-sm mx-auto px-4 py-16">
+        <h1 className="font-display text-2xl font-bold mb-4 text-center">Admin Login</h1>
+        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (pw === ADMIN_PASSWORD ? setAuthed(true) : setPwError("Wrong password"))} placeholder="Password" className="w-full bg-[#1C1C1E] border border-[#2A2A2E] rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#E8571F] mb-2" />
+        {pwError && <p className="text-xs text-[#C4635A] mb-2">{pwError}</p>}
+        <button onClick={() => pw === ADMIN_PASSWORD ? setAuthed(true) : setPwError("Wrong password")} className="w-full bg-[#E8571F] text-[#141416] font-medium py-2.5 rounded-lg hover:bg-[#D14A15]">Login</button>
+      </div>
+    );
+  }
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="font-display text-3xl font-bold">Admin Panel</h1>
+        <button onClick={() => setAuthed(false)} className="flex items-center gap-1.5 text-sm text-[#8B8D92] hover:text-[#F2F0EB]"><Icon name="logout" size={14} /> Logout</button>
+      </div>
+      <div className="flex gap-2 mb-6">
+        {["orders", "products"].map((t) => <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize ${tab === t ? "bg-[#E8571F] text-[#141416]" : "bg-[#1C1C1E] text-[#B8B9BD] border border-[#2A2A2E]"}`}>{t}</button>)}
+      </div>
+      {tab === "orders" ? <AdminOrders orders={orders} setOrders={setOrders} showToast={showToast} /> : <AdminProducts products={products} setProducts={setProducts} showToast={showToast} />}
+    </div>
+  );
+}
+
+function AdminOrders({ orders, setOrders, showToast }) {
+  async function updateStatus(id, status) {
+    const next = orders.map((o) => o.id === id ? { ...o, orderStatus: status } : o);
+    setOrders(next); showToast(`Order ${id} → ${status}`);
+
+    // The moment you mark an order "Packed", we ask the shipping-backend to book the
+    // Delhivery shipment and request a pickup automatically — no manual AWB typing.
+    // Needs the backend deployed (see shipping-backend/README.md) with your pickup
+    // location registered on Delhivery's dashboard.
+    const order = orders.find((o) => o.id === id);
+    const backendReady = SHIPPING_BACKEND_URL && !SHIPPING_BACKEND_URL.includes("localhost");
+    if (status === "Packed" && order && !order.trackingNumber && backendReady) {
+      try {
+        showToast("Booking Delhivery pickup…");
+        const resp = await fetch(`${SHIPPING_BACKEND_URL}/api/orders/ship`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.waybill) throw new Error(data.error || "ship failed");
+        const withWaybill = next.map((o) => o.id === id ? { ...o, trackingNumber: data.waybill, orderStatus: "Picked Up" } : o);
+        setOrders(withWaybill); saveOrders(withWaybill);
+        showToast(`Delhivery pickup booked — AWB ${data.waybill}`);
+      } catch (e) {
+        showToast("Auto-pickup didn't go through — you can still paste an AWB manually below once you book it yourself.");
+      }
+    }
+  }
+  function updateTracking(id, trackingNumber) {
+    const next = orders.map((o) => o.id === id ? { ...o, trackingNumber } : o);
+    setOrders(next);
+  }
+  function markPaid(id) {
+    const next = orders.map((o) => o.id === id ? { ...o, paymentStatus: "Paid" } : o);
+    setOrders(next); showToast(`Order ${id} marked Paid`);
+  }
+  if (orders.length === 0) return <EmptyState icon="clipboard-list" title="No orders yet" subtitle="Orders placed by customers will show up here." />;
+  return (
+    <div className="space-y-3">
+      {orders.map((o) => (
+        <div key={o.id} className={`bg-[#1C1C1E] border rounded-xl p-4 ${o.paymentStatus === "Pending" ? "border-[#C4635A]/40" : "border-[#2A2A2E]"}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div><span className="font-mono text-sm text-[#E8571F]">{o.id}</span><span className="text-xs text-[#5A5A5E] ml-2">{new Date(o.createdAt).toLocaleString("en-IN")}</span></div>
+            <select value={o.orderStatus} onChange={(e) => updateStatus(o.id, e.target.value)} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#E8571F]">
+              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <p className="text-sm text-[#B8B9BD] mb-1">{o.customerName} · {o.phone}{o.altPhone ? ` / ${o.altPhone}` : ""}</p>
+          <p className="text-xs text-[#5A5A5E] mb-1">{o.address}, {o.city}, {o.state} - {o.pincode}</p>
+          <p className="text-xs text-[#5A5A5E] mb-2 italic">Pickup from: {o.pickupAddress || SHOP_ADDRESS}</p>
+          {o.courierPartner && <p className="text-xs text-[#8B8D92] mb-2 flex items-center gap-1"><Icon name="truck" size={12} /> {o.courierPartner} · shipping {inr(o.shippingCharge || 0)} · expected {estimateDeliveryWindow(o)}</p>}
+          <div className="text-xs text-[#8B8D92] space-y-0.5 mb-2">{o.items.map((i) => <div key={i.id}>{i.name} × {i.qty} — {inr(i.price * i.qty)} {i.deliveryTime ? `(${i.deliveryTime})` : ""}</div>)}</div>
+          {["Picked Up", "Out for Delivery", "Delivered"].includes(o.orderStatus) && (
+            <div className="mb-2">
+              <label className="text-[10px] uppercase tracking-wide text-[#5A5A5E] font-mono block mb-1">Courier AWB / Tracking Number</label>
+              <input defaultValue={o.trackingNumber || ""} onBlur={(e) => updateTracking(o.id, e.target.value.trim())} placeholder="Paste AWB from Delhivery/Shiprocket" className="w-full bg-[#141416] border border-[#2A2A2E] rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#E8571F]" />
+            </div>
+          )}
+          <div className="flex items-center justify-between text-sm font-medium pt-2 border-t border-[#2A2A2E]">
+            <span className="flex items-center gap-2">
+              {o.paymentMethod} · <span className={o.paymentStatus === "Pending" ? "text-[#C4635A]" : ""}>{o.paymentStatus}</span>
+              {o.paymentStatus === "Pending" && <button onClick={() => markPaid(o.id)} className="text-xs bg-[#2A2A2E] hover:bg-[#3A3A3E] px-2 py-1 rounded">Mark Paid</button>}
+            </span>
+            <span>{inr(o.total)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AdminProducts({ products, setProducts, showToast }) {
+  const [editing, setEditing] = useState(null);
+  const blank = { sku: "", name: "", category: "", price: "", stock: "", image: "", deliveryTime: "" };
+  const [form, setForm] = useState(blank);
+  const fileInputRef = useRef(null);
+
+  function startEdit(p) { setEditing(p.id); setForm(p); }
+  function startNew() { setEditing("new"); setForm(blank); }
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) { showToast("Image too large (max 4MB)"); return; }
+    const reader = new FileReader();
+    reader.onload = () => setForm((f) => ({ ...f, image: reader.result }));
+    reader.readAsDataURL(file);
+  }
+  function save() {
+    if (!form.name || !form.sku || form.price === "" || form.stock === "") { showToast("Fill required fields"); return; }
+    const cleaned = { ...form, price: Number(form.price), stock: Number(form.stock) };
+    let next;
+    if (editing === "new") next = [...products, { ...cleaned, id: uid("p") }];
+    else next = products.map((p) => p.id === editing ? { ...p, ...cleaned } : p);
+    setProducts(next); setEditing(null); showToast("Saved");
+  }
+  function remove(id) { setProducts(products.filter((p) => p.id !== id)); showToast("Deleted"); }
+
+  return (
+    <div>
+      <button onClick={startNew} className="mb-4 flex items-center gap-1.5 bg-[#E8571F] text-[#141416] font-medium px-3 py-2 rounded-lg text-sm hover:bg-[#D14A15]"><Icon name="plus" size={15} /> Add Part</button>
+      {editing && (
+        <div className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-xl p-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+            <input placeholder="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
+            <input placeholder="Part name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
+            <input placeholder="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
+            <input placeholder="Delivery time e.g. 2-3 days" value={form.deliveryTime} onChange={(e) => setForm({ ...form, deliveryTime: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
+            <input placeholder="Price (₹)" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
+            <input placeholder="Stock qty" type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="bg-[#141416] border border-[#2A2A2E] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8571F]" />
+          </div>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-16 h-16 bg-[#141416] border border-[#2A2A2E] rounded-lg overflow-hidden shrink-0"><PartVisual image={form.image} category={form.category} /></div>
+            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 bg-[#2A2A2E] px-3 py-2 rounded-lg text-sm hover:bg-[#3A3A3E]"><Icon name="upload" size={14} /> Upload Photo</button>
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={save} className="bg-[#E8571F] text-[#141416] font-medium px-4 py-2 rounded-lg text-sm hover:bg-[#D14A15]">Save</button>
+            <button onClick={() => setEditing(null)} className="bg-[#2A2A2E] text-[#B8B9BD] px-4 py-2 rounded-lg text-sm">Cancel</button>
+          </div>
+        </div>
+      )}
+      <div className="space-y-2">
+        {products.map((p) => (
+          <div key={p.id} className="bg-[#1C1C1E] border border-[#2A2A2E] rounded-lg p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 bg-[#141416] rounded-lg overflow-hidden shrink-0"><PartVisual image={p.image} category={p.category} /></div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2"><Badge>{p.sku}</Badge><span className="text-sm font-medium truncate">{p.name}</span></div>
+                <p className="text-xs text-[#5A5A5E] mt-0.5">{p.category} · {inr(p.price)} · {p.stock} in stock{p.deliveryTime ? ` · ${p.deliveryTime}` : ""}</p>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button onClick={() => startEdit(p)} className="text-xs bg-[#2A2A2E] px-3 py-1.5 rounded-lg hover:bg-[#3A3A3E]">Edit</button>
+              <button onClick={() => remove(p.id)} className="text-xs text-[#C4635A] hover:text-[#E07168]"><Icon name="trash" size={14} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
